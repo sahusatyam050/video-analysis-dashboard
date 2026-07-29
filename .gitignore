@@ -1,0 +1,90 @@
+# -----------------------------
+# Python
+# -----------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Environment Variables
+.env
+.env.*
+
+# IDEs
+.vscode/
+.idea/
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Python Build Files
+build/
+dist/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Pytest
+.pytest_cache/
+
+# MyPy
+.mypy_cache/
+
+# Ruff
+.ruff_cache/
+
+# Coverage
+.coverage
+htmlcov/
+
+# -----------------------------
+# AI / ML
+# -----------------------------
+
+# Model checkpoints
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.bin
+
+# HuggingFace cache
+.cache/
+huggingface/
+
+# Ollama models (only if stored inside the project)
+models/
+
+frames/
+tessdata/
+tools/tesseract/
+# -----------------------------
+# Generated Project Data
+# -----------------------------
+
+outputs/
+video/
+
+# Test outputs (if these are generated during execution)
+test1/
+test2/
+test3/
+
+# Generated Reports
+*.json
+!requirements.txt
+
+*.txt
+!README.md
+
+# Streamlit Secrets
+.streamlit/secrets.toml
