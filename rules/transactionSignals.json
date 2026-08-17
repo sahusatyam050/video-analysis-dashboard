@@ -1,0 +1,488 @@
+{
+  "roles": {
+    "financial_context": [
+      "bank", "banking", "account", "balance", "available balance",
+      "credit", "debit", "statement", "mini statement",
+      "savings", "current", "deposit", "withdraw",
+      "loan", "interest", "emi", "ifsc", "branch",
+      "customer id", "account number", "net banking",
+      "mobile banking", "upi id", "beneficiary",
+      "payee", "payer", "remitter", "receiver",
+
+      "bank name", "branch name", "account holder",
+      "linked account", "primary account",
+      "available funds", "ledger balance",
+      "bank server", "bank gateway",
+
+      "state bank of india", "sbi",
+      "hdfc bank", "hdfc",
+      "icici bank", "icici",
+      "axis bank", "axis",
+      "kotak mahindra bank", "kotak",
+      "punjab national bank", "pnb",
+      "bank of baroda", "bob",
+      "canara bank",
+      "union bank of india",
+      "indusind bank",
+
+      "upi", "upi payment",
+      "google pay", "gpay",
+      "phonepe",
+      "paytm",
+      "bhim upi",
+      "amazon pay",
+      "mobikwik",
+      "freecharge"
+    ],
+
+    "crypto_context": [
+      "crypto wallet",
+      "wallet address",
+      "public address",
+      "private key",
+      "seed phrase",
+      "recovery phrase",
+      "mnemonic",
+      "derive address",
+
+      "blockchain network",
+      "on chain",
+      "off chain",
+      "mainnet",
+      "testnet",
+      "layer 2",
+      "sidechain",
+
+      "gas fee",
+      "network fee",
+      "miner fee",
+      "priority fee",
+      "gas limit",
+      "gas price",
+
+      "tx hash",
+      "transaction hash",
+      "block height",
+      "block number",
+      "confirmations",
+      "pending confirmation",
+
+      "smart contract",
+      "contract address",
+      "token contract",
+      "abi",
+      "interact contract",
+
+      "token balance",
+      "wallet balance",
+      "available balance",
+      "total balance",
+
+      "send crypto",
+      "receive crypto",
+      "copy address",
+      "scan wallet qr",
+
+      "deposit address",
+      "withdraw address",
+      "select network",
+      "network type",
+
+      "erc20",
+      "bep20",
+      "trc20",
+      "spl",
+      "polygon network",
+      "solana network",
+      "tron network",
+
+      "metamask",
+      "trust wallet",
+      "phantom wallet",
+      "coinbase wallet",
+      "exodus wallet",
+      "ledger wallet",
+      "trezor",
+
+      "binance",
+      "coinbase",
+      "kraken",
+      "kucoin",
+      "okx",
+      "bybit",
+
+      "bitcoin",
+      "ethereum",
+      "tether",
+      "usdt",
+      "usdc",
+      "bnb",
+      "solana",
+      "polygon",
+      "tron",
+      "cardano",
+      "avalanche",
+      "polkadot",
+      "ripple",
+      "litecoin",
+      "dogecoin"
+    ],
+
+    "commerce_context": [
+      "cart", "order", "product", "products",
+      "delivery", "shipping", "seller", "merchant",
+      "offer", "offers", "discount", "discounts",
+      "checkout", "shopping", "buy", "buy now",
+      "price", "pricing", "deal", "limited deal",
+
+      "order summary", "order review",
+      "purchase", "purchase summary",
+      "merchant name", "seller name"
+    ],
+
+    "payment_interface": [
+      "payment", "payments", "pay", "payable",
+      "transfer", "send money", "receive money",
+      "upi", "upi payment", "netbanking",
+      "debit card", "credit card",
+      "scan and pay", "qr payment", "fund transfer",
+
+      "payment page", "payment gateway",
+      "choose payment method", "select bank",
+      "redirecting to bank", "secure payment"
+    ],
+
+    "user_action": [
+      "send", "sent", "sending",
+      "pay now", "make payment",
+      "transfer funds", "transferring",
+      "withdraw", "withdrawing",
+      "debit", "credit", "credited", "debited",
+
+      "authorize payment", "confirm payment",
+      "approve", "approved",
+      "enter pin", "enter otp"
+    ],
+
+    "progression": [
+      "proceed", "continue", "confirm", "confirmation",
+      "next", "review", "authorize", "authorise",
+      "verify", "verification", "submit",
+      "processing", "please wait",
+
+      "redirecting", "connecting",
+      "requesting payment", "waiting for response"
+    ],
+
+    "completion": [
+      "payment successful", "payment completed",
+      "transaction successful", "transaction completed",
+      "money sent", "money received",
+      "amount credited", "amount debited",
+      "transfer completed", "successfully paid",
+      "payment done",
+
+      "success", "completed successfully",
+      "payment confirmed", "transaction confirmed","status successful",
+      "successful",
+      "successfully",
+      "payment status successful",
+      "transaction status successful",
+      "completed",
+      "completed successfully"
+    ],
+
+    "proof": [
+      "utr", "rrn", "transaction id",
+      "reference id", "receipt",
+      "acknowledgement", "acknowledgment",
+      "confirmation number", "order id",
+
+      "transaction reference",
+      "payment reference",
+      "receipt number",
+      "reference number",
+      "txn reference",
+      "transaction reference number"
+
+    ],
+
+    "informational_suppressor": [
+      "how to", "learn", "guide", "tutorial",
+      "example", "examples", "demo", "demonstration",
+      "explained", "explanation", "awareness",
+      "tips", "steps", "instructions",
+
+      "introduction", "overview",
+      "what is", "why use",
+      "benefits of", "features of"
+    ],
+
+    "commerce_suppressor": [
+      "add to cart",
+      "buy now",
+      "select size",
+      "select color",
+      "available sizes",
+      "available colors",
+      "quantity",
+      "qty",
+      "in stock",
+      "out of stock",
+      "limited stock",
+      "only few left",
+
+      "mrp",
+      "maximum retail price",
+      "discount",
+      "apply coupon",
+      "promo code",
+      "apply promo",
+      "emi available",
+      "no cost emi",
+      "monthly emi",
+      "bank offers",
+      "cashback offer",
+
+      "ratings and reviews",
+      "customer reviews",
+      "verified purchase",
+      "top reviews",
+      "write a review",
+      "product rating",
+      "customer rating",
+
+      "delivery by",
+      "free delivery",
+      "standard delivery",
+      "express delivery",
+      "shipping by",
+      "fulfilled by",
+      "dispatches in",
+      "arrives by",
+      "estimated arrival",
+      "delivery option",
+
+      "marketplace",
+      "seller rating",
+      "seller reviews",
+      "seller returns",
+      "merchant name",
+      "store name",
+      "visit the store",
+      "brand store",
+      "brand page",
+
+      "similar products",
+      "related products",
+      "customers also bought",
+      "recommended for you",
+      "you may also like",
+      "continue shopping",
+      "explore more",
+
+      "easy returns",
+      "return window",
+      "replacement available",
+      "refund policy",
+      "return policy",
+      "replacement policy",
+      "manufacturer warranty",
+      "warranty details",
+      "product details",
+      "product description",
+      "product specifications",
+      "product information",
+
+      "price details",
+      "price breakdown",
+      "price summary",
+      "price inclusive of taxes",
+      "price exclusive of taxes",
+
+      "order summary",
+      "order review",
+      "order details",
+      "order placed",
+      "order confirmation",
+      "order number",
+
+      "checkout page",
+      "checkout summary",
+      "checkout complete",
+      "review order",
+      "place order",
+
+      "shopping cart",
+      "your cart",
+      "items in cart",
+      "view cart",
+
+      "delivery details",
+      "delivery address",
+      "delivery date",
+      "delivery scheduled",
+      "estimated delivery",
+
+      "shipping address",
+      "shipping details",
+      "shipping method",
+      "shipping charges",
+
+      "seller details",
+      "seller information",
+      "merchant details",
+      "sold by",
+
+      "offers available",
+      "available offers",
+      "applied offers",
+      "limited time offer",
+      "deal of the day",
+      "flash sale",
+
+      "browse products",
+      "view products",
+      "compare prices",
+      "product catalog",
+
+      "purchase summary",
+      "purchase details",
+      "purchase confirmation",
+
+      "thank you for shopping",
+      "continue shopping",
+      "keep shopping",
+
+      "return policy",
+      "replacement policy",
+      "refund policy"
+    ]
+
+  },
+
+  "sentence_logic": {
+    "fuzzy_threshold": 80,
+    "execution_future_suppressor": [
+      "will be executed",
+      "can be executed",
+      "can be executed only after",
+      "until the transaction is complete",
+      "how the transaction will be executed",
+      "transaction will be executed",
+      "payment will be executed",
+      "execution control",
+      "immediate execution",
+      "leave as pending",
+      "ask user",
+      "let the user choose",
+      "execution will occur",
+      "execution can occur",
+      "execution option",
+      "execution settings",
+      "execution preference"
+    ],
+    "payment_instruction_phrases": [
+      "scan the qr code",
+      "scan and pay",
+      "scan qr to pay",
+      "choose payment method",
+      "select payment method",
+      "upi qr code will appear",
+      "you will be redirected",
+      "redirected to bank",
+      "complete your payment",
+      "complete the payment",
+      "proceed to payment",
+      "confirm to continue",
+      "waiting for payment",
+      "awaiting payment",
+      "payment is pending"
+    ],
+
+
+    "transaction_likely_sentences": [
+      "confirm payment",
+      "enter upi pin",
+      "processing payment",
+      "redirecting to bank",
+      "scan to pay",
+      "authorize payment",
+      "requesting payment",
+      "waiting for response"
+    ],
+    "execution_failure_suppressor": [
+      "transaction failed",
+      "payment failed",
+      "transaction unsuccessful",
+      "payment unsuccessful",
+      "transaction incomplete",
+      "payment incomplete",
+      "transaction not completed",
+      "payment not completed",
+      "could not complete transaction",
+      "could not complete payment",
+      "unable to complete transaction",
+      "unable to complete payment",
+      "transaction declined",
+      "payment declined",
+      "transaction cancelled",
+      "payment cancelled",
+      "transaction canceled",
+      "payment canceled",
+      "processing failed"
+    ],
+
+
+    "transaction_executed_sentences": [
+      "payment successful",
+      "transaction successful",
+      "money sent",
+      "payment completed",
+      "amount credited",
+      "amount debited",
+      "transaction completed",
+      "successfully paid",
+      "payment confirmed",
+      "transaction confirmed",
+      "transaction executed",
+      "transaction executed successfully",
+      "execution successful",
+      "execution completed",
+      "execution completed successfully",
+      "payment was successful",
+      "payment is successful",
+      "payment successfully completed",
+      "transaction successfully completed"
+    ],
+        "soft_execution_verbs": [
+      "paid",
+      "sent",
+      "completed",
+      "confirmed",
+      "executed",
+      "successful",
+      "credited",
+      "debited"
+    ],
+
+    "soft_execution_entities": [
+      "payment",
+      "transaction",
+      "transfer",
+      "money",
+      "reference",
+      "status",
+      "amount"
+
+    ],
+
+    "transaction_execution_patterns": [
+      {
+        "verbs": ["executed", "completed", "confirmed"],
+        "entities": ["transaction", "payment", "transfer"],
+        "qualifiers": ["success", "successfully"]
+      }
+    ]
+  }
+}

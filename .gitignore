@@ -81,6 +81,7 @@ test3/
 
 # Generated Reports
 *.json
+!rules/*.json
 !requirements.txt
 
 *.txt
@@ -88,3 +89,4 @@ test3/
 
 # Streamlit Secrets
 .streamlit/secrets.toml
+.agents/

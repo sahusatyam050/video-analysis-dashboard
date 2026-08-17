@@ -1,0 +1,122 @@
+{
+  "meta": {
+    "version": "1.0",
+    "description": "High-precision betting and fantasy-gaming signal rules. Designed to avoid overlap with generic banking data."
+  },
+
+  "brand_rules": [
+    { "term": "dream11", "weight": 35 },
+    { "term": "my11circle", "weight": 35 },
+    { "term": "mpl", "weight": 30 },
+    { "term": "mobile premier league", "weight": 30 },
+    { "term": "myteam11", "weight": 30 },
+    { "term": "playerzpot", "weight": 30 },
+    { "term": "ballebaazi", "weight": 30 },
+    { "term": "11wickets", "weight": 30 },
+    { "term": "gamezy", "weight": 28 },
+    { "term": "real11", "weight": 28 },
+    { "term": "winzo", "weight": 28 },
+    { "term": "vision11", "weight": 28 },
+
+    { "term": "bet365", "weight": 40 },
+    { "term": "stake", "weight": 40 },
+    { "term": "1xbet", "weight": 40 },
+    { "term": "parimatch", "weight": 38 },
+    { "term": "betway", "weight": 38 },
+    { "term": "betfair", "weight": 38 },
+    { "term": "draftkings", "weight": 38 },
+    { "term": "fanduel", "weight": 38 },
+    { "term": "betmgm", "weight": 38 },
+
+    { "term": "bc.game", "weight": 35 },
+    { "term": "cloudbet", "weight": 35 }
+  ],
+
+  "betting_phrases": [
+    { "phrase": "place bet", "weight": 14 },
+    { "phrase": "bet slip", "weight": 14 },
+    { "phrase": "join contest", "weight": 14 },
+    { "phrase": "enter contest", "weight": 14 },
+    { "phrase": "create team", "weight": 12 },
+    { "phrase": "select captain", "weight": 12 },
+    { "phrase": "vice captain", "weight": 12 },
+    { "phrase": "prize pool", "weight": 12 },
+    { "phrase": "potential winnings", "weight": 12 },
+    { "phrase": "cashout", "weight": 12 },
+    { "phrase": "withdraw winnings", "weight": 12 }
+  ],
+
+  "wallet_phrases": [
+    { "phrase": "add funds", "weight": 10 },
+    { "phrase": "wallet balance", "weight": 10 },
+    { "phrase": "available balance", "weight": 8 },
+    { "phrase": "bonus balance", "weight": 8 },
+    { "phrase": "deposit amount", "weight": 8 }
+  ],
+
+  "fantasy_ui_phrases": [
+    { "phrase": "fantasy points", "weight": 10 },
+    { "phrase": "points earned", "weight": 8 },
+    { "phrase": "team preview", "weight": 8 },
+    { "phrase": "match contest", "weight": 8 }
+  ],
+
+  "casino_phrases": [
+    { "phrase": "jackpot", "weight": 12 },
+    { "phrase": "slot game", "weight": 12 },
+    { "phrase": "spin wheel", "weight": 12 },
+    { "phrase": "live dealer", "weight": 12 }
+  ],
+
+  "odds_rules": {
+    "decimal_odds_regex": "(?<!₹|\\$|€|£)\\b\\d{1,2}(?:\\.\\d{1,2})\\b",
+    "context_words": ["odds", "market", "line", "handicap", "back", "lay"],
+    "weight": 30
+  },
+  "sportsbook_ui_phrases": [
+  { "phrase": "my bets", "weight": 15 },
+  { "phrase": "open bets", "weight": 15 },
+  { "phrase": "cash out", "weight": 14 },
+  { "phrase": "sportsbook", "weight": 12 },
+  { "phrase": "in play", "weight": 12 },
+  { "phrase": "market", "weight": 10 },
+  { "phrase": "markets", "weight": 10 },
+  { "phrase": "parlay", "weight": 14 },
+  { "phrase": "deposit", "weight": 10 },
+  { "phrase": "choose currency", "weight": 8 },
+  { "phrase": "crypto", "weight": 8 },
+  { "phrase": "usdt", "weight": 8 },
+  { "phrase": "usdc", "weight": 8 },
+  { "phrase": "single bet", "weight": 15 },
+  { "phrase": "sports", "weight": 5 },
+  { "phrase": "casino", "weight": 8 },
+  { "phrase": "settled bets", "weight": 15 },
+  { "phrase": "live betting", "weight": 14 },
+  { "phrase": "bet builder", "weight": 14 },
+  { "phrase": "accumulator", "weight": 14 },
+  { "phrase": "multiple bet", "weight": 14 },
+  { "phrase": "odds boost", "weight": 12 },
+  { "phrase": "boosted odds", "weight": 12 },
+  { "phrase": "football", "weight": 4 },
+  { "phrase": "cricket", "weight": 4 },
+  { "phrase": "tennis", "weight": 4 },
+  { "phrase": "basketball", "weight": 4 },
+  { "phrase": "esports", "weight": 4 }
+  ],
+
+  "promo_phrases": [
+    { "phrase": "first deposit bonus", "weight": 6 },
+    { "phrase": "bet and win", "weight": 6 },
+    { "phrase": "refer and earn", "weight": 5 }
+  ],
+
+  "suppressors": {
+    "instructional": [
+      "how to",
+      "tutorial",
+      "demo",
+      "for demonstration",
+      "practice mode"
+    ]
+  }
+}
