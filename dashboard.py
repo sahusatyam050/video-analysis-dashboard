@@ -8,7 +8,10 @@ import streamlit as st
 import json
 import re
 import sys
+import os
+import tempfile
 from pathlib import Path
+from extractframes import extractFrames
 from collections import Counter
 
 st.set_page_config(
@@ -24,110 +27,23 @@ st.sidebar.empty()
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap');
-
-:root {
-    --bg:        #F8FAFC;
-    --card:      #FFFFFF;
-    --border:    #E2E8F0;
-    --text-pri:  #1E293B;
-    --text-sec:  #475569;
-    --text-mute: #64748B;
-    --hover:     #F1F5F9;
-    --betting:   #D97706;
-    --banking:   #0891B2;
-    --crypto:    #7C3AED;
-    --success:   #059669;
-    --fail:      #DC2626;
-}
-html, body, [data-testid="stAppViewContainer"] {
-    background: var(--bg) !important;
-    color: var(--text-pri) !important;
-    font-family: 'Inter', sans-serif !important;
-}
-[data-testid="stSidebar"] {
-    background: #FFFFFF !important;
-    border-right: 1px solid var(--border) !important;
-}
-[data-testid="stSidebar"] * { color: var(--text-pri) !important; }
-#MainMenu, footer, { visibility: hidden; }
-
-/* KPI metric cards */
-div[data-testid="metric-container"],
-.stMetric {
-    background: var(--card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 12px !important;
-    padding: 18px 20px !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
-}
-div[data-testid="metric-container"] label,
-.stMetric label {
-    color: var(--text-mute) !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.62rem !important;
-    letter-spacing: 0.09em !important;
-    text-transform: uppercase !important;
-    font-weight: 600 !important;
-}
-[data-testid="stMetricValue"] {
-    color: #1E293B !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 1.85rem !important;
-    font-weight: 800 !important;
-    line-height: 1.1 !important;
-}
-[data-testid="stMetricDelta"] {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.7rem !important;
-}
 .section-header {
     font-family: 'Inter', sans-serif;
     font-weight: 700;
-    font-size: 0.73rem;
-    letter-spacing: 0.09em;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: var(--text-mute);
-    border-bottom: 1px solid var(--border);
+    color: #64748B;
+    border-bottom: 1px solid #E2E8F0;
     padding-bottom: 8px;
-    margin: 28px 0 14px 0;
+    margin: 24px 0 16px 0;
 }
-
-.card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-    margin-bottom: 14px;
-}
-
-/* Exec summary card */
-.exec-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 22px 24px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-}
-.exec-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 9px 0;
-    border-bottom: 1px solid #F1F5F9;
-    font-family: 'Inter', sans-serif;
-    font-size: 0.83rem;
-}
-.exec-row:last-child { border-bottom: none; }
-.exec-label { color: #475569; font-weight: 500; }
-.exec-value { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 0.9rem; }
-
 .kpi-badge {
     display: inline-block;
     padding: 3px 9px;
     border-radius: 20px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.66rem;
+    font-size: 0.7rem;
     font-weight: 700;
     margin: 2px 3px;
 }
@@ -138,66 +54,23 @@ div[data-testid="metric-container"] label,
 .badge-fail     { background:#FEE2E2; color:#7F1D1D; border:1px solid #FECACA; }
 .badge-qr       { background:#FFF7ED; color:#7C2D12; border:1px solid #FED7AA; }
 .badge-neutral  { background:#F1F5F9; color:#475569; border:1px solid #E2E8F0; }
-
 .verdict-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 9px 14px;
-    border-radius: 8px;
-    margin: 3px 0;
-    background: var(--card);
-    border: 1px solid var(--border);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.74rem;
-    transition: background 0.1s;
+    display: flex; align-items: center; gap: 12px; padding: 9px 14px;
+    border-radius: 8px; margin: 3px 0;
+    border: 1px solid #E2E8F0; background: #FFFFFF;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.74rem;
 }
-.verdict-row:hover { background: var(--hover); }
-.seg-num  { min-width:36px; color:var(--text-mute); font-weight:700; }
-.seg-time { min-width:145px; color:var(--banking); }
-.seg-verdict { flex:1; color:var(--text-sec); }
-
-.tx-alert {
-    background:#FFF5F5; border:1px solid #FECACA;
-    border-left:4px solid var(--fail);
+.seg-num  { min-width:36px; color:#64748B; font-weight:700; }
+.seg-time { min-width:145px; color:#0891B2; }
+.seg-verdict { flex:1; color:#475569; }
+.tx-alert, .qr-alert {
     border-radius:10px; padding:13px 17px; margin:7px 0;
-    font-family:'JetBrains Mono',monospace; font-size:0.77rem; color:var(--text-sec);
+    font-family:'JetBrains Mono',monospace; font-size:0.77rem;
 }
-.tx-alert-title { color:var(--fail); font-weight:700; font-size:0.83rem; margin-bottom:5px; }
-
-.qr-alert {
-    background:#FFFBEB; border:1px solid #FDE68A;
-    border-left:4px solid var(--betting);
-    border-radius:10px; padding:13px 17px; margin:7px 0;
-    font-family:'JetBrains Mono',monospace; font-size:0.77rem; color:var(--text-sec);
-}
-.qr-alert-title { color:var(--betting); font-weight:700; font-size:0.83rem; margin-bottom:5px; }
-
-[data-testid="stTabs"] button {
-    font-family:'Inter',sans-serif !important;
-    font-size:0.82rem !important; font-weight:500 !important;
-    color:var(--text-mute) !important;
-}
-[data-testid="stTabs"] button[aria-selected="true"] {
-    color:var(--text-pri) !important; font-weight:700 !important;
-}
-[data-testid="stSelectbox"] > div > div {
-    background:var(--card) !important; border-color:var(--border) !important;
-    color:var(--text-pri) !important; font-family:'Inter',sans-serif !important;
-}
-[data-testid="stExpander"] {
-    background:var(--card) !important; border:1px solid var(--border) !important;
-    border-radius:10px !important;
-}
-::-webkit-scrollbar { width:6px; height:6px; }
-::-webkit-scrollbar-track { background:var(--bg); }
-::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
-.stDownloadButton > button {
-    background:var(--card) !important; border:1px solid var(--border) !important;
-    color:var(--text-pri) !important; font-family:'Inter',sans-serif !important;
-    border-radius:8px !important; font-weight:500 !important;
-}
-.stDownloadButton > button:hover { background:var(--hover) !important; }
+.tx-alert { background:#FFF5F5; border:1px solid #FECACA; border-left:4px solid #DC2626; color:#475569; }
+.tx-alert-title { color:#DC2626; font-weight:700; font-size:0.83rem; margin-bottom:5px; }
+.qr-alert { background:#FFFBEB; border:1px solid #FDE68A; border-left:4px solid #D97706; color:#475569; }
+.qr-alert-title { color:#D97706; font-weight:700; font-size:0.83rem; margin-bottom:5px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -274,32 +147,71 @@ def get_output_dir():
 cli_dir = get_output_dir()
 
 with st.sidebar:
-    st.markdown("""
-    <div style='font-family:JetBrains Mono,monospace;font-size:0.58rem;letter-spacing:0.15em;
-    text-transform:uppercase;color:#D97706;margin-bottom:4px;'>◈ CAVEMAN ANALYTICS</div>
-    <div style='font-size:1.3rem;font-weight:800;font-family:Inter,sans-serif;
-    color:#1E293B;margin-bottom:20px;line-height:1.3;'>Video Intel<br>Dashboard</div>
-    """, unsafe_allow_html=True)
-
-    output_dir = st.text_input(
-        "Output Directory",
-        value=cli_dir or "output",
-        help="Path to folder with JSON/TXT output files"
-    )
+    st.markdown("### 🎬 Video Intel Dashboard")
+    
+    st.markdown("#### Upload Video")
+    uploaded_file = st.file_uploader("Analyze a new video", type=["mp4", "mov", "avi", "webm"])
+    if uploaded_file is not None:
+        if st.button("Start Analysis", type="primary"):
+            ext = os.path.splitext(uploaded_file.name)[1] or ".mp4"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
+                tmp_file.write(uploaded_file.read())
+                temp_video_path = tmp_file.name
+            
+            with st.status("Analyzing Video...", expanded=True) as status:
+                st.write("Extracting frames and identifying signals...")
+                progress_bar = st.progress(0.0, text="Processing: 0%")
+                
+                def update_progress(val):
+                    progress_bar.progress(val, text=f"Processing: {int(val * 100)}%")
+                
+                try:
+                    clean_name = re.sub(r'[^A-Za-z0-9_-]', '_', os.path.splitext(uploaded_file.name)[0])
+                    extractFrames(temp_video_path, progress_callback=update_progress, video_name=clean_name)
+                    st.session_state.output_dir = os.path.join("outputs", clean_name)
+                    status.update(label="Analysis Complete!", state="complete", expanded=False)
+                    st.rerun()
+                except Exception as e:
+                    import traceback
+                    err_msg = traceback.format_exc()
+                    status.update(label="Analysis Failed", state="error", expanded=True)
+                    st.error(f"Error during analysis: {e}\n\n{err_msg}")
+                finally:
+                    if os.path.exists(temp_video_path):
+                        os.remove(temp_video_path)
 
     st.markdown("---")
-    st.markdown("""
-    <div style='font-family:JetBrains Mono,monospace;font-size:0.66rem;color:#64748B;line-height:2.1;'>
-    EXPECTED FILES<br>
-    📄 segment_verdicts.json<br>
-    📄 betting_segment_scores.json<br>
-    📄 betting_transaction_attribution.json<br>
-    📄 crypto_betting_attribution.json<br>
-    📄 final_summary.txt<br>
-    📄 final_verdict_report.txt<br>
-    🖼 frames/frame*.jpg
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown("#### Select Existing Analysis")
+    
+    # Check outputs directory
+    outputs_dir = Path("outputs")
+    existing_outputs = []
+    if outputs_dir.exists():
+        for d in outputs_dir.iterdir():
+            if d.is_dir() and (d / "segment_verdicts.json").exists():
+                existing_outputs.append(d.name)
+    
+    if "output_dir" not in st.session_state:
+        st.session_state.output_dir = cli_dir or (f"outputs/{existing_outputs[0]}" if existing_outputs else "")
+        
+    options = [f"outputs/{d}" for d in existing_outputs]
+    if cli_dir and cli_dir not in options:
+        options.append(cli_dir)
+
+    selected_output = st.selectbox(
+        "Previous Analyses", 
+        options=options,
+        index=0 if options else None
+    )
+    
+    if selected_output and selected_output != st.session_state.output_dir:
+        st.session_state.output_dir = selected_output
+        st.rerun()
+
+output_dir = st.session_state.get("output_dir", "")
+if not output_dir or not os.path.exists(output_dir):
+    st.info("👈 Please upload a video to analyze or select an existing output directory from the sidebar.")
+    st.stop()
 
 output_path = Path(output_dir)
 
@@ -398,20 +310,7 @@ with tabs[0]:
               delta_color="inverse" if failed_tx_times else "off")
 
     # Severity colour overlays via st.markdown (injects border-top on each card)
-    st.markdown("""
-    <style>
-    div[data-testid="column"]:nth-child(2) [data-testid="metric-container"]
-        { border-top: 3px solid #D97706 !important; }
-    div[data-testid="column"]:nth-child(3) [data-testid="metric-container"]
-        { border-top: 3px solid #0891B2 !important; }
-    div[data-testid="column"]:nth-child(4) [data-testid="metric-container"]
-        { border-top: 3px solid #7C3AED !important; }
-    div[data-testid="column"]:nth-child(5) [data-testid="metric-container"]
-        { border-top: 3px solid #D97706 !important; }
-    div[data-testid="column"]:nth-child(6) [data-testid="metric-container"]
-        { border-top: 3px solid #DC2626 !important; }
-    </style>
-    """, unsafe_allow_html=True)
+    
 
     st.markdown("---")
 
@@ -420,57 +319,35 @@ with tabs[0]:
     # ── Executive Summary (replaces pie) ──
     with col_a:
         st.markdown('<div class="section-header">Executive Summary</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            def exec_row(label, value):
+                st.markdown(f"**{label}**: {value}")
 
-        def exec_row(label, value, color):
-            st.markdown(f"""
-            <div class="exec-row">
-              <span class="exec-label">{label}</span>
-              <span class="exec-value" style="color:{color};">{value}</span>
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown('<div class="exec-card">', unsafe_allow_html=True)
-        exec_row("Betting Coverage",       f"{betting_pct}%",                    "#D97706")
-        exec_row("Max Betting Score",      f"{max_bet_score:.1f} / 100",         "#D97706")
-        exec_row("Avg Betting Score",      f"{avg_bet_score:.1f} / 100",         "#92400E")
-        exec_row("Banking Segments",       f"{len(banking_segs)} / {segment_count}", "#0891B2")
-        exec_row("Crypto Segments",        f"{len(crypto_segs)} / {segment_count}",  "#7C3AED")
-        exec_row("QR / Payment Events",    f"{len(qr_segments)} events",         "#D97706")
-        exec_row("High Tx Likelihood",     f"{len(tx_likely_segs)} segments",    "#DC2626")
-        exec_row("Failed Transactions",    f"{len(failed_tx_times)} attempts",   "#DC2626")
-        exec_row("Tx Executed",            f"{len(tx_exec_segs)} confirmed",     "#059669")
-        exec_row("Video Duration",         f"{total_duration:.1f}s",             "#475569")
-        st.markdown('</div>', unsafe_allow_html=True)
-
+            exec_row("Betting Coverage",       f"{betting_pct}%")
+            exec_row("Max Betting Score",      f"{max_bet_score:.1f} / 100")
+            exec_row("Avg Betting Score",      f"{avg_bet_score:.1f} / 100")
+            exec_row("Banking Segments",       f"{len(banking_segs)} / {segment_count}")
+            exec_row("Crypto Segments",        f"{len(crypto_segs)} / {segment_count}")
+            exec_row("QR / Payment Events",    f"{len(qr_segments)} events")
+            exec_row("High Tx Likelihood",     f"{len(tx_likely_segs)} segments")
+            exec_row("Failed Transactions",    f"{len(failed_tx_times)} attempts")
+            exec_row("Tx Executed",            f"{len(tx_exec_segs)} confirmed")
+            exec_row("Video Duration",         f"{total_duration:.1f}s")
     # ── Signal Coverage bars ──
     with col_b:
         st.markdown('<div class="section-header">Signal Coverage</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            def signal_bar(label, count, total, color):
+                pct = count / total if total else 0
+                st.markdown(f"**{label}**: {count} / {total} ({pct*100:.1f}%)")
+                st.progress(pct)
 
-        def signal_bar(label, count, total, color):
-            pct = count / total * 100 if total else 0
-            st.markdown(f"""
-            <div style='margin:13px 0;'>
-              <div style='display:flex;justify-content:space-between;
-              font-family:JetBrains Mono,monospace;font-size:0.75rem;margin-bottom:5px;'>
-                <span style='color:#475569;font-weight:500;'>{label}</span>
-                <span style='color:{color};font-weight:700;'>{count}
-                  <span style='color:#94A3B8;font-weight:400;font-size:0.68rem;'>/{total} &nbsp;{pct:.1f}%</span>
-                </span>
-              </div>
-              <div style='background:#F1F5F9;border-radius:6px;height:8px;overflow:hidden;'>
-                <div style='background:{color};height:100%;width:{pct:.1f}%;
-                border-radius:6px;transition:width 0.4s;'></div>
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        signal_bar("Banking Context",     len(banking_segs),    segment_count, "#0891B2")
-        signal_bar("Crypto Context",      len(crypto_segs),     segment_count, "#7C3AED")
-        signal_bar("Transaction Likely",  len(tx_likely_segs),  segment_count, "#DC2626")
-        signal_bar("QR Code Detected",    len(qr_segments),     segment_count, "#D97706")
-        signal_bar("Betting Coverage",    len(betting_nonzero), len(bet_scores) or 1, "#F59E0B")
-        signal_bar("Failed Tx",           len(failed_tx_times), max(len(bet_tx),1), "#991B1B")
-
+            signal_bar("Banking Context",     len(banking_segs),    segment_count, "#0891B2")
+            signal_bar("Crypto Context",      len(crypto_segs),     segment_count, "#7C3AED")
+            signal_bar("Transaction Likely",  len(tx_likely_segs),  segment_count, "#DC2626")
+            signal_bar("QR Code Detected",    len(qr_segments),     segment_count, "#D97706")
+            signal_bar("Betting Coverage",    len(betting_nonzero), len(bet_scores) or 1, "#F59E0B")
+            signal_bar("Failed Tx",           len(failed_tx_times), max(len(bet_tx),1), "#991B1B")
     # ── Timeline hero (full width) ──
     st.markdown('<div class="section-header">Video Event Timeline — Full Duration Overview</div>', unsafe_allow_html=True)
     st.markdown("""<div style='font-family:Inter,sans-serif;font-size:0.79rem;color:#64748B;margin-bottom:12px;'>

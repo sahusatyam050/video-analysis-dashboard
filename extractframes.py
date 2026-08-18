@@ -218,11 +218,12 @@ def writeSegments(segments,output_dir):
 
 # -------------------- MAIN PIPELINE --------------------
 
-def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.1):
+def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.1, progress_callback=None, video_name=None):
     # Create a unique output folder for this video
-    video_name = os.path.splitext(
-        os.path.basename(videoPath)
-    )[0]
+    if not video_name:
+        video_name = os.path.splitext(
+            os.path.basename(videoPath)
+        )[0]
 
     output_dir = os.path.join(
         "outputs",
@@ -255,6 +256,12 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.1):
     # Open video container using PyAV
     container = av.open(videoPath)
     stream = container.streams.video[0]
+    if stream.duration:
+        total_duration = float(stream.duration * stream.time_base)
+    elif container.duration:
+        total_duration = float(container.duration) / 1e6
+    else:
+        total_duration = None
 
     nextTime = 0.0
     frameIndex = 0
@@ -287,6 +294,10 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.1):
                 continue
 
             ts = float(frame.pts * stream.time_base)
+
+            if progress_callback and total_duration and total_duration > 0:
+                progress = min(1.0, max(0.0, ts / total_duration))
+                progress_callback(progress)
 
             # Sample frames based on time interval
             if ts < nextTime:
