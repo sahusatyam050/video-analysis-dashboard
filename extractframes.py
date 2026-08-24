@@ -218,7 +218,7 @@ def writeSegments(segments,output_dir):
 
 # -------------------- MAIN PIPELINE --------------------
 
-def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.1, progress_callback=None, video_name=None):
+def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_callback=None, video_name=None):
     # Create a unique output folder for this video
     if not video_name:
         video_name = os.path.splitext(
@@ -278,10 +278,10 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.1, progress_cal
 
     # ---- Hash-skip state: track previous frame for pixel comparison ----
     frames_since_last_ocr = 0
-    MAX_REUSE_FRAMES = 7
+    MAX_REUSE_FRAMES = 3
     prev_gray_small = None
     prev_norm_text  = ""
-    PIXEL_DIFF_THRESHOLD = 0.01   # 2% mean pixel change triggers new OCR
+    PIXEL_DIFF_THRESHOLD = 0.02   # 2% mean pixel change triggers new OCR
 
     # ---- OCR lines collected in memory, flushed once after loop ----
     ocr_lines = []

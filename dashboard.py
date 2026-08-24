@@ -10,6 +10,7 @@ import re
 import sys
 import os
 import tempfile
+import time
 from pathlib import Path
 from extractframes import extractFrames
 from collections import Counter
@@ -166,9 +167,18 @@ with st.sidebar:
                     progress_bar.progress(val, text=f"Processing: {int(val * 100)}%")
                 
                 try:
+                    start_time = time.time()
                     clean_name = re.sub(r'[^A-Za-z0-9_-]', '_', os.path.splitext(uploaded_file.name)[0])
                     extractFrames(temp_video_path, progress_callback=update_progress, video_name=clean_name)
+                    elapsed = time.time() - start_time
+                    
                     st.session_state.output_dir = os.path.join("outputs", clean_name)
+                    
+                    # Save metadata
+                    meta_path = os.path.join(st.session_state.output_dir, "metadata.json")
+                    with open(meta_path, "w") as f:
+                        json.dump({"processing_time_seconds": elapsed}, f)
+                        
                     status.update(label="Analysis Complete!", state="complete", expanded=False)
                     st.rerun()
                 except Exception as e:
@@ -333,6 +343,12 @@ with tabs[0]:
             exec_row("Failed Transactions",    f"{len(failed_tx_times)} attempts")
             exec_row("Tx Executed",            f"{len(tx_exec_segs)} confirmed")
             exec_row("Video Duration",         f"{total_duration:.1f}s")
+            
+            metadata_file = output_path / "metadata.json"
+            if metadata_file.exists():
+                meta = load_json(metadata_file)
+                if meta and "processing_time_seconds" in meta:
+                    exec_row("Analysis Time", f"{meta['processing_time_seconds']:.1f}s")
     # ── Signal Coverage bars ──
     with col_b:
         st.markdown('<div class="section-header">Signal Coverage</div>', unsafe_allow_html=True)
