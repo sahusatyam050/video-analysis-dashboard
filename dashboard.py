@@ -11,8 +11,10 @@ import sys
 import os
 import tempfile
 import time
+import requests
 from pathlib import Path
-from extractframes import extractFrames
+from fpdf import FPDF
+import io
 from collections import Counter
 
 st.set_page_config(
@@ -123,6 +125,155 @@ def seg_label(seg):
     if (seg.get("transaction_likely") or 0) >= 30:     return "Possible Transaction"
     return "No Meaningful Activity"
 
+def create_pdf_report(seg, img_path):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("helvetica", size=16, style="B")
+    pdf.cell(190, 10, txt=f"Segment {seg['segment_index']} Evidence Report", ln=True, align='C')
+    
+    pdf.set_font("helvetica", size=10)
+    pdf.cell(190, 8, txt=f"Time: {seg['start_time']:.2f}s to {seg['end_time']:.2f}s", ln=True, align='C')
+    pdf.ln(5)
+    
+    # Add Image
+    if img_path and os.path.exists(img_path):
+        # Resize/fit to page width
+        pdf.image(img_path, x=10, y=30, w=190)
+        # Shift cursor below the image
+        pdf.set_y(150)
+    else:
+        pdf.cell(190, 10, txt="[No Image Available]", ln=True, align='C')
+        pdf.ln(10)
+        
+    pdf.set_font("helvetica", size=12, style="B")
+    pdf.cell(190, 10, txt="Classification Metrics", ln=True)
+    pdf.set_font("helvetica", size=10)
+    
+    bank = seg.get("banking_context", 0) or 0
+    cryp = seg.get("crypto_context", 0) or 0
+    txlk = seg.get("transaction_likely", 0) or 0
+    txex = seg.get("transaction_executed", 0) or 0
+    
+    pdf.cell(95, 8, txt=f"Banking Context: {bank}%", ln=False)
+    pdf.cell(95, 8, txt=f"Crypto Context: {cryp}%", ln=True)
+    pdf.cell(95, 8, txt=f"Transaction Likely: {txlk}%", ln=False)
+    pdf.cell(95, 8, txt=f"Transaction Executed: {txex}%", ln=True)
+    pdf.ln(10)
+    
+    pdf.set_font("helvetica", size=12, style="B")
+    pdf.cell(190, 10, txt="Extracted Raw OCR Text", ln=True)
+    pdf.set_font("helvetica", size=9)
+    # Ensure latin-1 compatibility for FPDF default fonts
+    ocr_text = seg.get("ocr_text", "No text detected.")
+    safe_ocr = str(ocr_text).encode("latin-1", "replace").decode("latin-1")
+    pdf.multi_cell(0, 5, txt=safe_ocr)
+    
+    return bytes(pdf.output())
+
+def create_master_pdf_report(verdicts):
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    # Title Page
+    pdf.add_page()
+    pdf.set_font("helvetica", size=24, style="B")
+    pdf.cell(190, 40, txt="Master Evidence Report", ln=True, align='C')
+    pdf.set_font("helvetica", size=14)
+    pdf.cell(190, 10, txt=f"Total Segments Analyzed: {len(verdicts)}", ln=True, align='C')
+    
+    for seg in verdicts:
+        pdf.add_page()
+        pdf.set_font("helvetica", size=16, style="B")
+        pdf.cell(190, 10, txt=f"Segment {seg['segment_index']} Evidence Report", ln=True, align='C')
+        
+        pdf.set_font("helvetica", size=10)
+        pdf.cell(190, 8, txt=f"Time: {seg['start_time']:.2f}s to {seg['end_time']:.2f}s", ln=True, align='C')
+        pdf.ln(5)
+        
+        # Add Image
+        img_path = seg.get("proof_frame")
+        if img_path and os.path.exists(img_path):
+            pdf.image(img_path, x=10, y=30, w=190)
+            pdf.set_y(150)
+        else:
+            pdf.cell(190, 10, txt="[No Image Available]", ln=True, align='C')
+            pdf.ln(10)
+            
+        pdf.set_font("helvetica", size=12, style="B")
+        pdf.cell(190, 10, txt="Classification Metrics", ln=True)
+        pdf.set_font("helvetica", size=10)
+        
+        bank = seg.get("banking_context", 0) or 0
+        cryp = seg.get("crypto_context", 0) or 0
+        txlk = seg.get("transaction_likely", 0) or 0
+        txex = seg.get("transaction_executed", 0) or 0
+        
+        pdf.cell(95, 8, txt=f"Banking Context: {bank}%", ln=False)
+        pdf.cell(95, 8, txt=f"Crypto Context: {cryp}%", ln=True)
+        pdf.cell(95, 8, txt=f"Transaction Likely: {txlk}%", ln=False)
+        pdf.cell(95, 8, txt=f"Transaction Executed: {txex}%", ln=True)
+        pdf.ln(10)
+        
+        pdf.set_font("helvetica", size=12, style="B")
+        pdf.cell(190, 10, txt="Extracted Raw OCR Text", ln=True)
+        pdf.set_font("helvetica", size=9)
+        ocr_text = seg.get("ocr_text", "No text detected.")
+        safe_ocr = str(ocr_text).encode("latin-1", "replace").decode("latin-1")
+        pdf.multi_cell(0, 5, txt=safe_ocr)
+        
+    return bytes(pdf.output())
+
+CATEGORIZED_KEYWORDS = {
+    "Financial": [
+        "deposit", "withdraw", "withdrawal", "wallet", "cashier", 
+        "balance", "transfer", "payout", "topup", "add money", 
+        "bank", "upi", "upi id", "gateway", "currency", "inr", "usd", 
+        "crypto", "usdt", "usdc", "bitcoin", "btc", "ethereum", "eth", "tron", "bnb",
+        "transaction", "my transactions", "recharge", "imps", "neft", "rtgs", "ecs", "ach",
+        "gpay", "google pay", "phonepe", "phone pe", "paytm", "pay tm", "amazon pay", "bhim",
+        "razorpay", "cashfree", "payu", "ccavenue", "billdesk", "rupay", "visa", "mastercard",
+        "available balance", "winning balance", "deposit balance", "bonus balance",
+        "beneficiary", "account number", "reference number", "transaction id",
+        "qr", "qr code", "scan & pay", "scan qr"
+    ],
+    "Gaming": [
+        "casino", "slot", "slots", "roulette", "blackjack", "poker", 
+        "baccarat", "sports", "live sports", "fantasy", "betting", 
+        "odds", "match", "tournament", "jackpot", "table games", 
+        "crash game", "aviator", "mines", "spin"
+    ],
+    "Rewards": [
+        "bonus", "referral", "rewards", "cashback", "spin", "wheel", 
+        "promo", "promotion", "free bet", "vip", "welcome bonus", 
+        "deposit bonus", "loyalty", "points", "claim"
+    ],
+    "Authentication": [
+        "login", "sign in", "signin", "register", "sign up", "signup", 
+        "kyc", "verify", "verification", "otp", "password", "account", 
+        "forgot password", "join now", "register now", "phone number", "phone", "mobile", "mobile number", "email", "e-mail"
+    ],
+    "Legal": [
+        "terms", "privacy", "policy", "license", "terms of service", 
+        "responsible gaming", "18+", "anti-money laundering", "aml", 
+        "disclaimer", "curacao", "malta", "isom"
+    ],
+    "Social": [
+        "telegram", "whatsapp", "discord", "instagram", "facebook", 
+        "twitter", "support", "contact us", "live chat", "channel"
+    ]
+}
+
+def get_detected_categories(ocr_text):
+    if not ocr_text:
+        return {}
+    text_lower = ocr_text.lower()
+    detected = {}
+    for cat, keywords in CATEGORIZED_KEYWORDS.items():
+        found = [kw for kw in keywords if kw in text_lower]
+        if found:
+            detected[cat] = found
+    return detected
+
 def seg_color(seg):
     lbl = seg_label(seg)
     return {
@@ -154,31 +305,39 @@ with st.sidebar:
     uploaded_file = st.file_uploader("Analyze a new video", type=["mp4", "mov", "avi", "webm"])
     if uploaded_file is not None:
         if st.button("Start Analysis", type="primary"):
-            ext = os.path.splitext(uploaded_file.name)[1] or ".mp4"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
-                tmp_file.write(uploaded_file.read())
-                temp_video_path = tmp_file.name
-            
             with st.status("Analyzing Video...", expanded=True) as status:
-                st.write("Extracting frames and identifying signals...")
+                st.write("Uploading and starting analysis...")
                 progress_bar = st.progress(0.0, text="Processing: 0%")
-                
-                def update_progress(val):
-                    progress_bar.progress(val, text=f"Processing: {int(val * 100)}%")
                 
                 try:
                     start_time = time.time()
-                    clean_name = re.sub(r'[^A-Za-z0-9_-]', '_', os.path.splitext(uploaded_file.name)[0])
-                    extractFrames(temp_video_path, progress_callback=update_progress, video_name=clean_name)
-                    elapsed = time.time() - start_time
                     
-                    st.session_state.output_dir = os.path.join("outputs", clean_name)
+                    # Upload to API
+                    files = {'file': (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                    resp = requests.post("http://localhost:8000/analyze", files=files)
+                    resp.raise_for_status()
+                    task_id = resp.json()["task_id"]
                     
-                    # Save metadata
-                    meta_path = os.path.join(st.session_state.output_dir, "metadata.json")
-                    with open(meta_path, "w") as f:
-                        json.dump({"processing_time_seconds": elapsed}, f)
+                    st.write("Extracting frames and identifying signals...")
+                    
+                    # Poll for status
+                    while True:
+                        status_resp = requests.get(f"http://localhost:8000/status/{task_id}")
+                        if status_resp.status_code == 200:
+                            data = status_resp.json()
+                            progress = data.get("progress", 0.0)
+                            progress_bar.progress(progress, text=f"Processing: {int(progress * 100)}%")
+                            
+                            if data.get("status") == "complete":
+                                break
+                            elif data.get("status") == "error":
+                                raise Exception(data.get("error_message", "Unknown error in backend"))
                         
+                        time.sleep(1.0)
+                    
+                    elapsed = time.time() - start_time
+                    st.session_state.output_dir = task_id  # Use task_id as the analysis identifier
+                    
                     status.update(label="Analysis Complete!", state="complete", expanded=False)
                     st.rerun()
                 except Exception as e:
@@ -186,25 +345,24 @@ with st.sidebar:
                     err_msg = traceback.format_exc()
                     status.update(label="Analysis Failed", state="error", expanded=True)
                     st.error(f"Error during analysis: {e}\n\n{err_msg}")
-                finally:
-                    if os.path.exists(temp_video_path):
-                        os.remove(temp_video_path)
 
     st.markdown("---")
     st.markdown("#### Select Existing Analysis")
     
-    # Check outputs directory
-    outputs_dir = Path("outputs")
-    existing_outputs = []
-    if outputs_dir.exists():
-        for d in outputs_dir.iterdir():
-            if d.is_dir() and (d / "segment_verdicts.json").exists():
-                existing_outputs.append(d.name)
+    # Check existing outputs via API
+    try:
+        analyses_resp = requests.get("http://localhost:8000/analyses")
+        if analyses_resp.status_code == 200:
+            existing_outputs = analyses_resp.json()
+        else:
+            existing_outputs = []
+    except Exception:
+        existing_outputs = []
     
     if "output_dir" not in st.session_state:
-        st.session_state.output_dir = cli_dir or (f"outputs/{existing_outputs[0]}" if existing_outputs else "")
+        st.session_state.output_dir = cli_dir or (existing_outputs[0] if existing_outputs else "")
         
-    options = [f"outputs/{d}" for d in existing_outputs]
+    options = existing_outputs
     if cli_dir and cli_dir not in options:
         options.append(cli_dir)
 
@@ -219,23 +377,34 @@ with st.sidebar:
         st.rerun()
 
 output_dir = st.session_state.get("output_dir", "")
-if not output_dir or not os.path.exists(output_dir):
+if not output_dir:
     st.info("👈 Please upload a video to analyze or select an existing output directory from the sidebar.")
     st.stop()
 
 output_path = Path(output_dir)
 
 # ─────────────────────────── LOAD DATA ─────────────────────────────
-verdicts   = load_json(output_path / "segment_verdicts.json") or []
-bet_scores = load_json(output_path / "betting_segment_scores.json") or []
-bet_tx     = load_json(output_path / "betting_transaction_attribution.json") or []
-crypto_tx  = load_json(output_path / "crypto_betting_attribution.json") or []
-summary    = load_text(output_path / "final_summary.txt")
-report     = load_text(output_path / "final_verdict_report.txt")
-frames_dir = output_path / "frames"
+summary_data = {}
+try:
+    summary_resp = requests.get(f"http://localhost:8000/analyses/{output_dir}/summary")
+    if summary_resp.status_code == 200:
+        summary_data = summary_resp.json()
+except Exception:
+    pass
+
+verdicts   = summary_data.get("segment_verdicts", [])
+bet_scores = summary_data.get("betting_segment_scores", [])
+bet_tx     = summary_data.get("betting_transaction_attribution", [])
+crypto_tx  = summary_data.get("crypto_betting_attribution", [])
+summary    = summary_data.get("final_summary_txt", "")
+report     = summary_data.get("final_verdict_report_txt", "")
+metadata   = summary_data.get("metadata", {})
+original_filename = summary_data.get("original_filename", "Unknown Video")
+
+frames_dir_url = f"http://localhost:8000/outputs/{output_dir}/frames"
 
 if not verdicts:
-    st.error(f"No `segment_verdicts.json` found in `{output_dir}`. Check the path.")
+    st.error(f"No `segment_verdicts.json` found for `{output_dir}` from API. Check the analysis.")
     st.stop()
 
 # ─────────────────────────── DERIVED STATS — real field math only ──
@@ -289,7 +458,7 @@ st.markdown(f"""
   </span>
 </div>
 <div style='color:#64748B;font-family:JetBrains Mono,monospace;font-size:0.7rem;margin-bottom:26px;'>
-  {segment_count} segments · {total_duration:.1f}s total · {len(qr_segments)} QR detections · {len(failed_tx_times)} failed transactions
+  <span style='color:#1E293B;font-weight:700;'>{original_filename}</span><span>:Videoname</span> · {segment_count} segments · {total_duration:.1f}s total · {len(qr_segments)} QR detections · {len(failed_tx_times)} failed transactions
 </div>
 """, unsafe_allow_html=True)
 
@@ -1007,25 +1176,58 @@ with tabs[3]:
 
 # ═══════════════════════════ TAB 5: SEGMENT EXPLORER ═══════════════
 with tabs[4]:
-    st.markdown('<div class="section-header">Segment Explorer</div>', unsafe_allow_html=True)
+    if "seg_idx_sel" not in st.session_state:
+        st.session_state.seg_idx_sel = 0
 
-    col_left, col_right = st.columns([1, 2])
+    num_segments = len(verdicts)
+
+    # Top Control Bar
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4 = st.columns([1.5, 2, 1.5, 2.5])
+    with ctrl_col1:
+        if st.button("⬅️ Previous", use_container_width=True, disabled=(st.session_state.seg_idx_sel <= 0)):
+            st.session_state.seg_idx_sel -= 1
+            st.rerun()
+    with ctrl_col2:
+        seg_options = [f"Seg {v['segment_index']:03d} | {v['start_time']:.2f}s – {v['end_time']:.2f}s" for v in verdicts]
+        selected_option = st.selectbox(
+            "Select Segment", 
+            seg_options, 
+            index=st.session_state.seg_idx_sel,
+            label_visibility="collapsed"
+        )
+        new_idx = int(selected_option.split("Seg ")[1].split(" ")[0]) - 1
+        if new_idx != st.session_state.seg_idx_sel:
+            st.session_state.seg_idx_sel = new_idx
+            st.rerun()
+    with ctrl_col3:
+        if st.button("Next ➡️", use_container_width=True, disabled=(st.session_state.seg_idx_sel >= num_segments - 1)):
+            st.session_state.seg_idx_sel += 1
+            st.rerun()
+    with ctrl_col4:
+        try:
+            m_pdf = create_master_pdf_report(verdicts)
+            st.download_button(
+                label="📥 Master PDF (All Segments)",
+                data=m_pdf,
+                file_name=f"master_report_{original_filename}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"Master PDF Error: {e}")
+
+    seg = verdicts[st.session_state.seg_idx_sel]
+
+    st.markdown('<div class="section-header" style="margin-top:15px;">Segment Explorer</div>', unsafe_allow_html=True)
+    col_left, col_right = st.columns([1, 1])
 
     with col_left:
-        seg_options = [
-            f"Seg {v['segment_index']:03d} | {v['start_time']:.2f}s – {v['end_time']:.2f}s"
-            for v in verdicts
-        ]
-        selected     = st.selectbox("Select Segment", seg_options)
-        seg_idx_sel  = int(selected.split("Seg ")[1].split(" ")[0]) - 1
-        seg          = verdicts[seg_idx_sel]
-
         # Horizontal bar comparison (replaces radar)
         bank_val  = seg.get("banking_context",    0) or 0
         cryp_val  = seg.get("crypto_context",     0) or 0
         txlk_val  = seg.get("transaction_likely", 0) or 0
         txex_val  = seg.get("transaction_executed",0) or 0
-        bet_val   = bet_scores[seg_idx_sel] if seg_idx_sel < len(bet_scores) else 0
+        bet_val   = bet_scores[st.session_state.seg_idx_sel] if st.session_state.seg_idx_sel < len(bet_scores) else 0
         qr_val    = 100 if seg.get("qr_detected") else 0
 
         st.markdown(f"""
@@ -1094,7 +1296,6 @@ with tabs[4]:
         </div>
         """, unsafe_allow_html=True)
 
-        # Horizontal bar chart via ECharts (replaces radar)
         bar_cats   = ["Banking Context","Crypto Context","Tx Likely","Tx Executed","Betting Score","QR Signal"]
         bar_vals   = [bank_val, cryp_val, txlk_val, txex_val, bet_val, qr_val]
         bar_colors = ["#0891B2","#7C3AED","#DC2626","#059669","#D97706","#F59E0B"]
@@ -1141,32 +1342,88 @@ with tabs[4]:
             }}]
         }}""", height=230, key=f"hbar_{seg['segment_index']}")
 
-        # Frames preview
-        st.markdown('<div class="section-header">Segment Frames</div>', unsafe_allow_html=True)
-        if frames_dir.exists():
-            all_frames = sorted(frames_dir.glob("frame*.jpg"),
-                                key=lambda p: int(p.stem.replace("frame","")))
-            fps_est    = len(all_frames) / total_duration if total_duration > 0 else 8
-            f_start    = int(seg["start_time"] * fps_est)
-            f_end      = int(seg["end_time"]   * fps_est)
-            seg_frames = [f for f in all_frames
-                          if f_start <= int(f.stem.replace("frame","")) <= f_end]
-            if not seg_frames and all_frames:
-                seg_frames = [min(all_frames, key=lambda f: abs(int(f.stem.replace("frame","")) - f_start))]
-            display_frames = seg_frames[:1]
-            if display_frames:
-                img_cols = st.columns(len(display_frames))
-                for col, fp in zip(img_cols, display_frames):
-                    col.image(
-                        str(fp),
-                        caption=fp.stem,
-                        width=250   # try 200, 250, or 300
-                    )
-            else:
-                st.markdown("<div style='color:#94A3B8;font-family:JetBrains Mono,monospace;font-size:0.78rem;'>No frames found for this segment.</div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div style='color:#94A3B8;font-family:JetBrains Mono,monospace;font-size:0.78rem;'>frames/ directory not found.</div>", unsafe_allow_html=True)
+    # Full Width Image and Legend
+    st.markdown('<div class="section-header" style="margin-top:20px;">Segment Frames & Evidence</div>', unsafe_allow_html=True)
+    proof_frame_path = seg.get("proof_frame")
+    if proof_frame_path:
+        img_url = f"http://localhost:8000/{proof_frame_path}"
+        st.image(
+            img_url,
+            caption="Proof Frame (Annotated)",
+            use_container_width=True
+        )
+        
+        # Keyword Categories Display
+        colors_hex = {
+            "Financial": "#00C800", "Gaming": "#0078FF", "Rewards": "#FFD700",
+            "Authentication": "#E60000", "Legal": "#B432B4", "Social": "#00BEFF", "Payment": "#FF0000"
+        }
+        
+        detected_cats = get_detected_categories(seg.get("ocr_text", ""))
+        if detected_cats:
+            cat_html = "<div style='display:flex;flex-wrap:wrap;gap:10px;margin-bottom:15px;'>"
+            for cat, keywords in detected_cats.items():
+                kw_str = ", ".join(set(keywords))
+                color = colors_hex.get(cat, "#333")
+                cat_html += f"""
+                <div style='background:#F8FAFC;border:1px solid #E2E8F0;border-left:4px solid {color};
+                border-radius:6px;padding:8px 12px;'>
+                  <div style='font-family:Inter,sans-serif;font-size:0.75rem;font-weight:700;color:#1E293B;margin-bottom:2px;'>{cat}</div>
+                  <div style='font-family:JetBrains Mono,monospace;font-size:0.7rem;color:#64748B;'>{kw_str}</div>
+                </div>
+                """
+            cat_html += "</div>"
+            st.markdown(cat_html, unsafe_allow_html=True)
 
+        # Downloads Row
+        dl_col1, dl_col2 = st.columns(2)
+        with dl_col1:
+            if os.path.exists(proof_frame_path):
+                with open(proof_frame_path, "rb") as f:
+                    st.download_button(
+                        label="📷 Download Segment Image",
+                        data=f,
+                        file_name=f"segment_{seg['segment_index']}_frame.jpg",
+                        mime="image/jpeg",
+                        use_container_width=True
+                    )
+        with dl_col2:
+            try:
+                pdf_data = create_pdf_report(seg, proof_frame_path)
+                st.download_button(
+                    label="📄 Download Segment PDF Report",
+                    data=pdf_data,
+                    file_name=f"segment_{seg['segment_index']}_report.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.error(f"PDF Error: {e}")
+        
+        # OCR Text Expander
+        with st.expander("🔍 View Raw OCR Text"):
+            st.markdown(f"<div style='font-family:monospace;font-size:0.8rem;white-space:pre-wrap;background:#F1F5F9;padding:12px;border-radius:8px;border:1px solid #E2E8F0;'>{seg.get('ocr_text', 'No text detected')}</div>", unsafe_allow_html=True)
+        
+        # Synced Video Playback
+        st.markdown('<div class="section-header" style="margin-top:20px;">Video Playback Sync</div>', unsafe_allow_html=True)
+        video_path = os.path.join("uploads", original_filename)
+        if os.path.exists(video_path):
+            st.video(video_path, start_time=int(seg['start_time']))
+        else:
+            st.info("Original video file not found on server for playback.")
+
+    else:
+        st.markdown("<div style='color:#94A3B8;font-family:JetBrains Mono,monospace;font-size:0.78rem;'>No proof frame available.</div>", unsafe_allow_html=True)
+        
+    legend_html = """
+    <div style='margin-top:20px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:15px;'>
+      <div style='font-family:JetBrains Mono,monospace;font-size:0.65rem;color:#64748B;margin-bottom:12px;text-transform:uppercase;letter-spacing:0.08em;font-weight:700;'>Bounding Box Legend</div>
+      <div style='display:flex;flex-wrap:wrap;gap:12px;'>
+    """
+    for cat, color in colors_hex.items():
+        legend_html += f"<div style='display:flex;align-items:center;font-family:Inter,sans-serif;font-size:0.75rem;color:#1E293B;font-weight:500;'><div style='width:14px;height:14px;border-radius:4px;background-color:{color};margin-right:6px;box-shadow:0 1px 3px rgba(0,0,0,0.1);'></div>{cat}</div>"
+    legend_html += "</div></div>"
+    st.markdown(legend_html, unsafe_allow_html=True)
     # Full segment list
     st.markdown('<div class="section-header">All Segments</div>', unsafe_allow_html=True)
     filter_options = ["All","Banking","Crypto","Transaction","QR Detected","No Activity"]
