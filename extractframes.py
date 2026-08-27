@@ -9,6 +9,7 @@ import json
 import cv2
 import numpy as np
 import pytesseract
+from pytesseract import Output
 from PIL import Image
 
 from collections import Counter
@@ -20,7 +21,107 @@ from engine.final_verdict import generate_final_verdict
 from engine.final_summary import generate_final_summary
 from engine.final_summary import load_segment_verdicts
 from engine.betting_classifier import run_betting_analysis
-from engine.run_crypto_betting_analysis import run_analysis as run_crypto_betting_analysis
+from engine.run_crypto_betting_analysis import run_analysis as run_crypto_betting_analysis# -------------------- KEYWORDS & COLORS --------------------
+CATEGORIZED_KEYWORDS = {
+    "Financial": [
+        "deposit", "withdraw", "withdrawal", "wallet", "cashier", 
+        "balance", "transfer", "payout", "topup", "add money", 
+        "bank", "upi", "upi id", "gateway", "currency", "inr", "usd", 
+        "crypto", "usdt", "usdc", "bitcoin", "btc", "ethereum", "eth", "tron", "bnb",
+        "transaction", "my transactions", "recharge", "imps", "neft", "rtgs", "ecs", "ach",
+        "gpay", "google pay", "phonepe", "phone pe", "paytm", "pay tm", "amazon pay", "bhim",
+        "razorpay", "cashfree", "payu", "ccavenue", "billdesk", "rupay", "visa", "mastercard",
+        "available balance", "winning balance", "deposit balance", "bonus balance",
+        "beneficiary", "account number", "reference number", "transaction id",
+        "qr", "qr code", "scan & pay", "scan qr"
+    ],
+    "Gaming": [
+        "casino", "slot", "slots", "roulette", "blackjack", "poker", 
+        "baccarat", "sports", "live sports", "fantasy", "betting", 
+        "odds", "match", "tournament", "jackpot", "table games", 
+        "crash game", "aviator", "mines", "spin"
+    ],
+    "Rewards": [
+        "bonus", "referral", "rewards", "cashback", "spin", "wheel", 
+        "promo", "promotion", "free bet", "vip", "welcome bonus", 
+        "deposit bonus", "loyalty", "points", "claim"
+    ],
+    "Authentication": [
+        "login", "sign in", "signin", "register", "sign up", "signup", 
+        "kyc", "verify", "verification", "otp", "password", "account", 
+        "forgot password", "join now", "register now", "phone number", "phone", "mobile", "mobile number", "email", "e-mail"
+    ],
+    "Legal": [
+        "terms", "privacy", "policy", "license", "terms of service", 
+        "responsible gaming", "18+", "anti-money laundering", "aml", 
+        "disclaimer", "curacao", "malta", "isom"
+    ],
+    "Social": [
+        "telegram", "whatsapp", "discord", "instagram", "facebook", 
+        "twitter", "support", "contact us", "live chat", "channel"
+    ]
+}
+
+CATEGORY_COLORS_BGR = {
+    "Financial": (0, 200, 0),       
+    "Gaming": (255, 120, 0),        
+    "Rewards": (0, 215, 255),       
+    "Authentication": (0, 0, 230),  
+    "Legal": (180, 50, 180),        
+    "Social": (255, 190, 0),        
+    "Payment_Indicator": (0, 0, 255)
+}
+
+PAYMENT_INDICATOR_PATTERNS = {
+    "UPI_ID": r"[a-zA-Z0-9.\-_]+@(upi|okicici|ybl|paytm|ibl|axl|sbi|kotak|barodampay|icici|hdfcbank|okaxis|oksbi|okhdfcbank)",
+    "PAYMENT_GATEWAY": r"(razorpay|cashfree|stripe|paytm|phonepe|google pay|gpay|payu|instamojo|paypal|ccavenue|billdesk)",
+    "QR_CODE": r"(qr code|scan and pay|scan & pay|upi qr|scan to pay|scan qr|scan code)",
+    "BANK_TRANSFER": r"(bank transfer|imps|neft|rtgs|ecs|ach|account number|ifsc|account name|beneficiary)",
+    "WALLET": r"(paytm wallet|phonepe wallet|mobikwik|freecharge|crypto wallet|usdt trc20|bep20|binance pay|coinbase)"
+}
+
+def draw_text_bounding_boxes(rgb, data, offset_x=0, offset_y=0, scale_factor=1.0):
+    if not data or 'text' not in data:
+        return
+        
+    n_boxes = len(data['text'])
+    words = [str(w).strip().lower() for w in data['text']]
+    
+    # Check multi-word phrases and single words
+    for category, keywords in CATEGORIZED_KEYWORDS.items():
+        color = CATEGORY_COLORS_BGR.get(category, (0, 255, 0))
+        for keyword in keywords:
+            kw_parts = keyword.split()
+            kw_len = len(kw_parts)
+            
+            for i in range(n_boxes - kw_len + 1):
+                if all(words[i+j] == kw_parts[j] for j in range(kw_len)):
+                    lefts = [data['left'][i+j] for j in range(kw_len)]
+                    tops = [data['top'][i+j] for j in range(kw_len)]
+                    rights = [data['left'][i+j] + data['width'][i+j] for j in range(kw_len)]
+                    bottoms = [data['top'][i+j] + data['height'][i+j] for j in range(kw_len)]
+                    
+                    x = int(min(lefts) / scale_factor) + offset_x
+                    y = int(min(tops) / scale_factor) + offset_y
+                    w = int((max(rights) - min(lefts)) / scale_factor)
+                    h = int((max(bottoms) - min(tops)) / scale_factor)
+                    
+                    cv2.rectangle(rgb, (x-2, y-2), (x + w + 2, y + h + 2), color, 2)
+                    
+    # Check regex patterns
+    color = CATEGORY_COLORS_BGR.get("Payment_Indicator", (0, 0, 255))
+    for i in range(n_boxes):
+        word = words[i]
+        if not word:
+            continue
+        for cat_name, pattern in PAYMENT_INDICATOR_PATTERNS.items():
+            if re.search(pattern, word):
+                x = int(data['left'][i] / scale_factor) + offset_x
+                y = int(data['top'][i] / scale_factor) + offset_y
+                w = int(data['width'][i] / scale_factor)
+                h = int(data['height'][i] / scale_factor)
+                cv2.rectangle(rgb, (x-2, y-2), (x + w + 2, y + h + 2), color, 2)
+                break
 
 
 # -------------------- TESSERACT SETUP --------------------
@@ -154,13 +255,13 @@ def extract_qr_text(rgb):
 
     # Must actually decode content
     if not data or not data.strip():
-        return None
+        return None, None
 
     # Must have a valid QR box
     if points is None:
-        return None
+        return None, None
 
-    return data.strip()
+    return data.strip(), points
 
 
 # Attempts to extract payee or beneficiary names from text
@@ -328,11 +429,13 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_cal
                 gray, processed = preprocess_for_ocr(rgb)
 
                 # First OCR pass on processed image
-                text = pytesseract.image_to_string(
+                data = pytesseract.image_to_data(
                     processed,
                     lang="eng",
-                    config=tesseract_config
+                    config=tesseract_config,
+                    output_type=Output.DICT
                 )
+                text = " ".join([str(w) for w in data["text"] if str(w).strip()])
 
                 # Second OCR pass only if raw text is not truly empty
                 # and still missing digits or payment keywords
@@ -341,17 +444,20 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_cal
                     and not DIGIT_PATTERN.search(text)
                     and "paid" not in text.lower()
                 ):
-                    text = pytesseract.image_to_string(
+                    data = pytesseract.image_to_data(
                         gray,
                         lang="eng",
                         config=(
                             "--oem 1 --psm 6 "
                             "-c tessedit_char_whitelist="
                             "₹0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                        )
+                        ),
+                        output_type=Output.DICT
                     )
+                    text = " ".join([str(w) for w in data["text"] if str(w).strip()])
 
                 norm_text = normalizeText(text)
+                draw_text_bounding_boxes(rgb, data, scale_factor=2.0)
 
                 # ---------- ROI OCR FOR PAYMENT AREA ----------
                 # Only run ROI pass if frame has meaningful content but
@@ -369,14 +475,22 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_cal
                         interpolation=cv2.INTER_CUBIC
                     )
 
-                    roi_text = pytesseract.image_to_string(
+                    roi_data = pytesseract.image_to_data(
                         roi_gray,
                         lang="eng",
-                        config="--oem 1 --psm 6"
+                        config="--oem 1 --psm 6",
+                        output_type=Output.DICT
                     )
+                    
+                    roi_text = " ".join([str(w) for w in roi_data["text"] if str(w).strip()])
 
                     if roi_text.strip():
                         norm_text += " " + normalizeText(roi_text)
+                        
+                        h, w, _ = rgb.shape
+                        y1 = int(0.30 * h)
+                        x1 = int(0.10 * w)
+                        draw_text_bounding_boxes(rgb, roi_data, offset_x=x1, offset_y=y1, scale_factor=2.0)
 
                 prev_norm_text = norm_text
                 frames_since_last_ocr = 0
@@ -404,7 +518,7 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_cal
             screen_stable  = lowCount == 0 and len(currentSegment["frames"]) > 5
 
             if not (already_has_qr and screen_stable):
-               qr_text = extract_qr_text(rgb)
+               qr_text, qr_points = extract_qr_text(rgb)
 
                if qr_text:
 
@@ -414,6 +528,9 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_cal
                         or "payment" in qr_text.lower()
                     ):
                         currentSegment["qrTexts"].append(qr_text)
+                        if qr_points is not None:
+                            qr_points = qr_points.astype(int)
+                            cv2.polylines(rgb, [qr_points], True, (0, 255, 0), 5)
 
             # Compute anchor stability for segmentation
             stable_anchors = {
