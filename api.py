@@ -12,12 +12,18 @@ from datetime import datetime, timezone
 from extractframes import extractFrames
 from database import SessionLocal, get_db
 from models import VideoTask, AnalysisSummary, VideoSegment
+from pydantic import BaseModel
+from crawler import crawl_and_record
+import shutil
+from urllib.parse import urlparse
 
 app = FastAPI(title="Video Intel Dashboard API")
 
 # Mount the outputs directory so Streamlit can fetch the images via URL
 os.makedirs("outputs", exist_ok=True)
 app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 def process_video_background(task_id: int, file_path: str):
     """Background task to process the video and store results in DB."""
@@ -102,21 +108,14 @@ def process_video_background(task_id: int, file_path: str):
         task.error_message = str(e)
         db.commit()
     finally:
-        # Clean up the temporary video file
-        if os.path.exists(file_path):
-            os.remove(file_path)
         db.close()
 
 
 @app.post("/analyze")
 async def analyze_video(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
     """Uploads a video, creates a DB task, and starts background analysis."""
-    # Save uploaded file to a temporary location
-    fd, temp_path = tempfile.mkstemp(suffix=".mp4")
-    with os.fdopen(fd, 'wb') as f:
-        f.write(await file.read())
-        
-    # Create the task in PostgreSQL
+    # Save uploaded file to the permanent uploads directory immediately
+    # We must first create the DB task to get its ID for the filename
     new_task = VideoTask(
         original_filename=file.filename,
         status="processing",
@@ -126,10 +125,68 @@ async def analyze_video(background_tasks: BackgroundTasks, file: UploadFile = Fi
     db.commit()
     db.refresh(new_task)
     
-    background_tasks.add_task(process_video_background, new_task.id, temp_path)
+    file_path = f"uploads/{new_task.id}_{file.filename}"
+    with open(file_path, 'wb') as f:
+        f.write(await file.read())
+        
+    # Update the DB task with the actual saved filename
+    new_task.original_filename = os.path.basename(file_path)
+    db.commit()
+        
+    background_tasks.add_task(process_video_background, new_task.id, file_path)
     
     # Return string task_id to maintain frontend compatibility
     return {"task_id": str(new_task.id)}
+
+
+class CrawlRequest(BaseModel):
+    url: str
+    duration: int = 30
+
+@app.post("/crawl")
+async def start_crawl_analysis(
+    req: CrawlRequest, 
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_db)
+):
+    """
+    Crawls a URL autonomously, records the screen as a video, and processes it.
+    """
+    # 1. Run the crawler synchronously here (since we need the file path) or asynchronously.
+    # The endpoint is async, so we can await it directly.
+    try:
+        video_path = await crawl_and_record(req.url, duration=req.duration)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Crawler failed: {str(e)}"})
+
+    # Extract domain for cleaner filenames
+    parsed_url = urlparse(req.url)
+    domain = parsed_url.netloc.replace("www.", "") or "unknown_domain"
+    # Clean domain to avoid filesystem issues
+    clean_domain = "".join(c for c in domain if c.isalnum() or c in ".-_")
+    
+    # 2. Create DB Task with the new domain filename
+    new_task = VideoTask(
+        original_filename=f"{clean_domain}.webm",
+        status="processing",
+        progress=0.0
+    )
+    db.add(new_task)
+    db.commit()
+    db.refresh(new_task)
+
+    # 3. Move the video to uploads using the domain name
+    dest_path = f"uploads/{new_task.id}_{clean_domain}.webm"
+    shutil.move(video_path, dest_path)
+    
+    # 4. Update the DB task with the final destination filename
+    new_task.original_filename = os.path.basename(dest_path)
+    db.commit()
+
+    # 5. Start Background Analysis
+    background_tasks.add_task(process_video_background, new_task.id, dest_path)
+
+    return {"task_id": new_task.id, "message": "Crawling finished, analysis started"}
 
 
 @app.get("/status/{task_id}")
@@ -159,6 +216,21 @@ def list_analyses(db: Session = Depends(get_db)):
     completed_tasks = db.query(VideoTask).filter(VideoTask.status == "complete").all()
     # Return list of string task IDs to match frontend expectation
     return [str(task.id) for task in completed_tasks]
+
+
+@app.get("/analyses_detailed")
+def list_analyses_detailed(db: Session = Depends(get_db)):
+    """Lists all analyses with detailed status for the React sidebar."""
+    tasks = db.query(VideoTask).order_by(VideoTask.id.desc()).all()
+    return [
+        {
+            "id": str(task.id),
+            "video_name": task.original_filename or f"Task {task.id}",
+            "status": task.status,
+            "progress": task.progress or 0.0
+        }
+        for task in tasks
+    ]
 
 
 @app.get("/analyses/{task_id}/summary")
@@ -203,3 +275,4 @@ def get_analysis_summary(task_id: str, db: Session = Depends(get_db)):
         "final_verdict_report_txt": summary.final_verdict_report_txt if summary else "",
         "metadata": meta_dict
     }
+

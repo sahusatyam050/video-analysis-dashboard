@@ -41,6 +41,49 @@ st.markdown("""
     padding-bottom: 8px;
     margin: 24px 0 16px 0;
 }
+[data-testid="stSidebar"] {
+    background-color: #F8FAFC !important;
+    border-right: 1px solid #E2E8F0 !important;
+}
+[data-testid="stSidebar"] .stMarkdown h3 {
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 800 !important;
+    color: #0F172A !important;
+    letter-spacing: -0.02em !important;
+    margin-bottom: 1rem !important;
+}
+[data-testid="stSidebar"] .stMarkdown h4 {
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 700 !important;
+    font-size: 0.75rem !important;
+    color: #475569 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    margin-top: 1.5rem !important;
+    margin-bottom: 0.75rem !important;
+}
+[data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
+    font-family: 'Inter', sans-serif !important;
+}
+
+[data-testid="baseButton-primary"] {
+    background-color: #0F172A !important;
+    color: #FFFFFF !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-family: 'Inter', sans-serif !important;
+    padding: 0.5rem 1rem !important;
+    border: none !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+}
+[data-testid="baseButton-primary"]:hover {
+    background-color: #1E293B !important;
+}
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+    border-radius: 8px !important;
+    border-color: #CBD5E1 !important;
+    background-color: #FFFFFF !important;
+}
 .kpi-badge {
     display: inline-block;
     padding: 3px 9px;
@@ -299,54 +342,111 @@ def get_output_dir():
 cli_dir = get_output_dir()
 
 with st.sidebar:
-    st.markdown("### 🎬 Video Intel Dashboard")
+    st.markdown("""
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:24px; margin-top:-10px;">
+            <div style="background:#0F172A; width:38px; height:38px; display:flex; align-items:center; justify-content:center; border-radius:10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <span style="font-size:18px;">🎬</span>
+            </div>
+            <div style="display:flex; flex-direction:column; justify-content:center;">
+                <span style="font-family:Inter,sans-serif; font-size:17px; font-weight:800; color:#0F172A; line-height:1.2; letter-spacing:-0.03em;">Video Analysis</span>
+                <span style="font-family:Inter,sans-serif; font-size:11px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.05em; line-height:1.2; margin-top:2px;">Dashboard</span>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
     
-    st.markdown("#### Upload Video")
-    uploaded_file = st.file_uploader("Analyze a new video", type=["mp4", "mov", "avi", "webm"])
-    if uploaded_file is not None:
-        if st.button("Start Analysis", type="primary"):
-            with st.status("Analyzing Video...", expanded=True) as status:
-                st.write("Uploading and starting analysis...")
-                progress_bar = st.progress(0.0, text="Processing: 0%")
-                
-                try:
-                    start_time = time.time()
+    tab1, tab2 = st.tabs(["Upload Video", "Crawl URL"])
+    
+    with tab1:
+        uploaded_file = st.file_uploader("Analyze a new video", type=["mp4", "mov", "avi", "webm"], label_visibility="collapsed")
+        if uploaded_file is not None:
+            if st.button("Start Analysis", type="primary", use_container_width=True, key="btn_upload"):
+                with st.status("Analyzing Video...", expanded=True) as status:
+                    st.write("Uploading and starting analysis...")
+                    progress_bar = st.progress(0.0, text="Processing: 0%")
                     
-                    # Upload to API
-                    files = {'file': (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                    resp = requests.post("http://localhost:8000/analyze", files=files)
-                    resp.raise_for_status()
-                    task_id = resp.json()["task_id"]
-                    
-                    st.write("Extracting frames and identifying signals...")
-                    
-                    # Poll for status
-                    while True:
-                        status_resp = requests.get(f"http://localhost:8000/status/{task_id}")
-                        if status_resp.status_code == 200:
-                            data = status_resp.json()
-                            progress = data.get("progress", 0.0)
-                            progress_bar.progress(progress, text=f"Processing: {int(progress * 100)}%")
-                            
-                            if data.get("status") == "complete":
-                                break
-                            elif data.get("status") == "error":
-                                raise Exception(data.get("error_message", "Unknown error in backend"))
+                    try:
+                        start_time = time.time()
                         
-                        time.sleep(1.0)
-                    
-                    elapsed = time.time() - start_time
-                    st.session_state.output_dir = task_id  # Use task_id as the analysis identifier
-                    
-                    status.update(label="Analysis Complete!", state="complete", expanded=False)
-                    st.rerun()
-                except Exception as e:
-                    import traceback
-                    err_msg = traceback.format_exc()
-                    status.update(label="Analysis Failed", state="error", expanded=True)
-                    st.error(f"Error during analysis: {e}\n\n{err_msg}")
+                        # Upload to API
+                        files = {'file': (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                        resp = requests.post("http://localhost:8000/analyze", files=files)
+                        resp.raise_for_status()
+                        task_id = resp.json()["task_id"]
+                        
+                        st.write("Extracting frames and identifying signals...")
+                        
+                        # Poll for status
+                        while True:
+                            status_resp = requests.get(f"http://localhost:8000/status/{task_id}")
+                            if status_resp.status_code == 200:
+                                data = status_resp.json()
+                                progress = data.get("progress", 0.0)
+                                progress_bar.progress(progress, text=f"Processing: {int(progress * 100)}%")
+                                
+                                if data.get("status") == "complete":
+                                    break
+                                elif data.get("status") == "error":
+                                    raise Exception(data.get("error_message", "Unknown error in backend"))
+                            
+                            time.sleep(1.0)
+                        
+                        elapsed = time.time() - start_time
+                        st.session_state.output_dir = task_id  # Use task_id as the analysis identifier
+                        
+                        status.update(label="Analysis Complete!", state="complete", expanded=False)
+                        st.rerun()
+                    except Exception as e:
+                        import traceback
+                        err_msg = traceback.format_exc()
+                        status.update(label="Analysis Failed", state="error", expanded=True)
+                        st.error(f"Error during analysis: {e}\n\n{err_msg}")
 
-    st.markdown("---")
+    with tab2:
+        crawl_url = st.text_input("Website URL", placeholder="https://example-betting.com", label_visibility="collapsed")
+        crawl_duration = st.slider("Crawl Duration (seconds)", min_value=10, max_value=120, value=30)
+        
+        if crawl_url:
+            if st.button("Start Autonomous Crawl", type="primary", use_container_width=True, key="btn_crawl"):
+                with st.status("Deploying Autonomous Bot...", expanded=True) as status:
+                    st.write(f"Crawling {crawl_url} and recording screen...")
+                    progress_bar = st.progress(0.0, text="Initializing browser...")
+                    
+                    try:
+                        start_time = time.time()
+                        
+                        # Send to Crawl API
+                        payload = {"url": crawl_url, "duration": crawl_duration}
+                        resp = requests.post("http://localhost:8000/crawl", json=payload)
+                        resp.raise_for_status()
+                        task_id = resp.json()["task_id"]
+                        
+                        st.write("Crawl complete. Extracting frames and identifying signals...")
+                        
+                        # Poll for status
+                        while True:
+                            status_resp = requests.get(f"http://localhost:8000/status/{task_id}")
+                            if status_resp.status_code == 200:
+                                data = status_resp.json()
+                                progress = data.get("progress", 0.0)
+                                progress_bar.progress(progress, text=f"Processing: {int(progress * 100)}%")
+                                
+                                if data.get("status") == "complete":
+                                    break
+                                elif data.get("status") == "error":
+                                    raise Exception(data.get("error_message", "Unknown error in backend"))
+                            
+                            time.sleep(1.0)
+                        
+                        st.session_state.output_dir = task_id
+                        status.update(label="Crawl & Analysis Complete!", state="complete", expanded=False)
+                        st.rerun()
+                    except Exception as e:
+                        import traceback
+                        err_msg = traceback.format_exc()
+                        status.update(label="Crawl Failed", state="error", expanded=True)
+                        st.error(f"Error during crawl: {e}\n\n{err_msg}")
+
+    st.markdown("<hr style='margin:1.5rem 0; border-color:#E2E8F0;'>", unsafe_allow_html=True)
     st.markdown("#### Select Existing Analysis")
     
     # Check existing outputs via API
@@ -369,7 +469,8 @@ with st.sidebar:
     selected_output = st.selectbox(
         "Previous Analyses", 
         options=options,
-        index=0 if options else None
+        index=0 if options else None,
+        label_visibility="collapsed"
     )
     
     if selected_output and selected_output != st.session_state.output_dir:
@@ -476,63 +577,121 @@ tabs = st.tabs([
 # ═══════════════════════════ TAB 1: OVERVIEW ═══════════════════════
 with tabs[0]:
 
-    # ── KPI Row with severity colors ──
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-
-    # Inject per-metric accent via markdown delta trick: use colored HTML in label
-    c1.metric("Segments",         segment_count,              f"{total_duration:.1f}s video")
-    c2.metric("QR Detected",      len(qr_segments),           f"{len(qr_segments)} events")
-    c3.metric("Banking Segs",     len(banking_segs),          f"{len(banking_segs)/segment_count*100:.0f}% coverage")
-    c4.metric("Crypto Segs",      len(crypto_segs),           f"{len(crypto_segs)/segment_count*100:.0f}% coverage")
-    c5.metric("Betting Coverage", f"{betting_pct}%",          f"{len(betting_nonzero)} segments")
-    c6.metric("Failed Tx",        len(failed_tx_times),       "unconfirmed attempts",
-              delta_color="inverse" if failed_tx_times else "off")
-
-    # Severity colour overlays via st.markdown (injects border-top on each card)
-    
-
-    st.markdown("---")
+    # ── KPI Row with custom HTML cards ──
+    metrics_html = f"""
+    <div style="display:grid; grid-template-columns:repeat(6, 1fr); gap:16px; margin-bottom:24px; font-family:Inter,sans-serif;">
+        <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-size:12px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.5px;">Segments</span>
+                <span style="color:#94A3B8;">▶</span>
+            </div>
+            <div style="font-family:JetBrains Mono,monospace; font-size:28px; font-weight:700; color:#1E293B;">{segment_count}</div>
+            <div style="font-size:11px; font-weight:500; color:#64748B; margin-top:4px;">{total_duration:.1f}s video</div>
+        </div>
+        <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-size:12px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.5px;">QR Detected</span>
+                <span style="color:#94A3B8;">⬛</span>
+            </div>
+            <div style="font-family:JetBrains Mono,monospace; font-size:28px; font-weight:700; color:#1E293B;">{len(qr_segments)}</div>
+            <div style="font-size:11px; font-weight:500; color:#64748B; margin-top:4px;">{len(qr_segments)} events</div>
+        </div>
+        <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-size:12px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.5px;">Banking Segs</span>
+                <span style="color:#94A3B8;">🏦</span>
+            </div>
+            <div style="font-family:JetBrains Mono,monospace; font-size:28px; font-weight:700; color:#1E293B;">{len(banking_segs)}</div>
+            <div style="font-size:11px; font-weight:500; color:#64748B; margin-top:4px;">{(len(banking_segs)/segment_count*100) if segment_count else 0:.0f}% coverage</div>
+        </div>
+        <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-size:12px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.5px;">Crypto Segs</span>
+                <span style="color:#94A3B8;">₿</span>
+            </div>
+            <div style="font-family:JetBrains Mono,monospace; font-size:28px; font-weight:700; color:#1E293B;">{len(crypto_segs)}</div>
+            <div style="font-size:11px; font-weight:500; color:#64748B; margin-top:4px;">{(len(crypto_segs)/segment_count*100) if segment_count else 0:.0f}% coverage</div>
+        </div>
+        <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-size:12px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.5px;">Betting Cov</span>
+                <span style="color:#94A3B8;">🎯</span>
+            </div>
+            <div style="font-family:JetBrains Mono,monospace; font-size:28px; font-weight:700; color:#1E293B;">{betting_pct}%</div>
+            <div style="font-size:11px; font-weight:500; color:#64748B; margin-top:4px;">{len(betting_nonzero)} segments</div>
+        </div>
+        <div style="background:{'#1E293B' if failed_tx_times else '#FFF'}; border:1px solid {'#1E293B' if failed_tx_times else '#E2E8F0'}; border-radius:12px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-size:12px; font-weight:600; color:{'#94A3B8' if failed_tx_times else '#64748B'}; text-transform:uppercase; letter-spacing:0.5px;">Failed Tx</span>
+                <span style="color:{'#94A3B8' if failed_tx_times else '#94A3B8'};">🛑</span>
+            </div>
+            <div style="font-family:JetBrains Mono,monospace; font-size:28px; font-weight:700; color:{'#FFF' if failed_tx_times else '#1E293B'};">{len(failed_tx_times)}</div>
+            <div style="font-size:11px; font-weight:500; color:{'#94A3B8' if failed_tx_times else '#64748B'}; margin-top:4px;">unconfirmed attempts</div>
+        </div>
+    </div>
+    """
+    st.markdown(metrics_html, unsafe_allow_html=True)
 
     col_a, col_b = st.columns([1, 1.2])
 
-    # ── Executive Summary (replaces pie) ──
     with col_a:
-        st.markdown('<div class="section-header">Executive Summary</div>', unsafe_allow_html=True)
-        with st.container(border=True):
-            def exec_row(label, value):
-                st.markdown(f"**{label}**: {value}")
-
-            exec_row("Betting Coverage",       f"{betting_pct}%")
-            exec_row("Max Betting Score",      f"{max_bet_score:.1f} / 100")
-            exec_row("Avg Betting Score",      f"{avg_bet_score:.1f} / 100")
-            exec_row("Banking Segments",       f"{len(banking_segs)} / {segment_count}")
-            exec_row("Crypto Segments",        f"{len(crypto_segs)} / {segment_count}")
-            exec_row("QR / Payment Events",    f"{len(qr_segments)} events")
-            exec_row("High Tx Likelihood",     f"{len(tx_likely_segs)} segments")
-            exec_row("Failed Transactions",    f"{len(failed_tx_times)} attempts")
-            exec_row("Tx Executed",            f"{len(tx_exec_segs)} confirmed")
-            exec_row("Video Duration",         f"{total_duration:.1f}s")
+        st.markdown('<div class="section-header" style="display:flex; align-items:center; gap:8px;"><span>🎯</span> Executive Summary</div>', unsafe_allow_html=True)
+        
+        exec_html = '<div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; font-family:Inter,sans-serif;">'
+        
+        def exec_card(label, value):
+            return (
+                '<div style="background:#F8FAFC; border:1px solid #F1F5F9; border-radius:8px; padding:12px; display:flex; flex-direction:column;">'
+                f'<span style="font-size:11px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">{label}</span>'
+                f'<span style="font-family:JetBrains Mono,monospace; font-size:14px; font-weight:700; color:#1E293B;">{value}</span>'
+                '</div>'
+            )
             
-            metadata_file = output_path / "metadata.json"
-            if metadata_file.exists():
-                meta = load_json(metadata_file)
-                if meta and "processing_time_seconds" in meta:
-                    exec_row("Analysis Time", f"{meta['processing_time_seconds']:.1f}s")
-    # ── Signal Coverage bars ──
-    with col_b:
-        st.markdown('<div class="section-header">Signal Coverage</div>', unsafe_allow_html=True)
-        with st.container(border=True):
-            def signal_bar(label, count, total, color):
-                pct = count / total if total else 0
-                st.markdown(f"**{label}**: {count} / {total} ({pct*100:.1f}%)")
-                st.progress(pct)
+        exec_html += exec_card("Betting Coverage", f"{betting_pct}%")
+        exec_html += exec_card("Max Betting Score", f"{max_bet_score:.1f} / 100")
+        exec_html += exec_card("Avg Betting Score", f"{avg_bet_score:.1f} / 100")
+        exec_html += exec_card("Banking Segments", f"{len(banking_segs)} / {segment_count}")
+        exec_html += exec_card("Crypto Segments", f"{len(crypto_segs)} / {segment_count}")
+        exec_html += exec_card("QR / Payment", f"{len(qr_segments)} events")
+        exec_html += exec_card("High Tx Likely", f"{len(tx_likely_segs)} segments")
+        exec_html += exec_card("Failed Tx", f"{len(failed_tx_times)} attempts")
+        exec_html += exec_card("Tx Executed", f"{len(tx_exec_segs)} confirmed")
+        exec_html += exec_card("Video Duration", f"{total_duration:.1f}s")
+        
+        exec_html += '</div>'
+        st.markdown(exec_html, unsafe_allow_html=True)
 
-            signal_bar("Banking Context",     len(banking_segs),    segment_count, "#0891B2")
-            signal_bar("Crypto Context",      len(crypto_segs),     segment_count, "#7C3AED")
-            signal_bar("Transaction Likely",  len(tx_likely_segs),  segment_count, "#DC2626")
-            signal_bar("QR Code Detected",    len(qr_segments),     segment_count, "#D97706")
-            signal_bar("Betting Coverage",    len(betting_nonzero), len(bet_scores) or 1, "#F59E0B")
-            signal_bar("Failed Tx",           len(failed_tx_times), max(len(bet_tx),1), "#991B1B")
+    with col_b:
+        st.markdown('<div class="section-header" style="display:flex; align-items:center; gap:8px;"><span>🛡️</span> Signal Coverage</div>', unsafe_allow_html=True)
+        
+        sig_html = '<div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:20px; box-shadow:0 1px 2px rgba(0,0,0,0.05); font-family:Inter,sans-serif; display:flex; flex-direction:column; gap:20px;">'
+        
+        def sig_bar(label, count, total, color):
+            pct = (count / total * 100) if total else 0
+            return (
+                '<div>'
+                '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">'
+                f'<span style="font-size:14px; font-weight:600; color:#334155;">{label}</span>'
+                '<div style="display:flex; align-items:center; gap:8px;">'
+                f'<span style="font-size:12px; color:#64748B;">{count} / {total}</span>'
+                f'<span style="font-family:JetBrains Mono,monospace; font-size:12px; font-weight:700; color:#334155; background:#F1F5F9; padding:2px 6px; border-radius:4px;">{pct:.1f}%</span>'
+                '</div>'
+                '</div>'
+                '<div style="width:100%; height:10px; background:#F1F5F9; border-radius:5px; overflow:hidden;">'
+                f'<div style="width:{pct}%; height:100%; background:{color}; border-radius:5px;"></div>'
+                '</div>'
+                '</div>'
+            )
+            
+        sig_html += sig_bar("Banking Context", len(banking_segs), segment_count, "#0891B2")
+        sig_html += sig_bar("Crypto Context", len(crypto_segs), segment_count, "#7C3AED")
+        sig_html += sig_bar("Transaction Likely", len(tx_likely_segs), segment_count, "#DC2626")
+        sig_html += sig_bar("QR Code Detected", len(qr_segments), segment_count, "#D97706")
+        sig_html += sig_bar("Betting Coverage", len(betting_nonzero), len(bet_scores) or 1, "#F59E0B")
+        sig_html += sig_bar("Failed Tx", len(failed_tx_times), max(len(bet_tx),1), "#991B1B")
+        
+        sig_html += '</div>'
+        st.markdown(sig_html, unsafe_allow_html=True)
     # ── Timeline hero (full width) ──
     st.markdown('<div class="section-header">Video Event Timeline — Full Duration Overview</div>', unsafe_allow_html=True)
     st.markdown("""<div style='font-family:Inter,sans-serif;font-size:0.79rem;color:#64748B;margin-bottom:12px;'>
@@ -797,43 +956,113 @@ with tabs[1]:
         }}]
     }}""", height=330, key="sankey_tab2")
     st.markdown(
-        '<div class="section-header">Transaction Event Table</div>',
+        '<div class="section-header">Chronological Event Feed</div>',
         unsafe_allow_html=True
     )
+    st.markdown('<p style="font-size:12px; color:#64748B; margin-top:-10px; margin-bottom:20px;">A forensic step-by-step reconstruction of the video\'s activity timeline.</p>', unsafe_allow_html=True)
     
-    event_rows = []
-
-    for tx in bet_tx:
-        tx_time = tx.get("transaction_time", "")
-
-        try:
-            start_t, end_t = re.split(r"[–-]", tx_time)
-            duration = round(float(end_t) - float(start_t), 2)
-        except:
-            start_t = end_t = duration = "N/A"
-
-        result = (
-            "Failed"
-            if not tx.get("transaction_used_for_betting", False)
-            else "Executed"
-        )
-
-        event_rows.append({
-            "Event Type": "QR Payment",
-            "Start": f"{start_t}s",
-            "End": f"{end_t}s",
-            "Duration": f"{duration}s",
-            "Result": result
-        })
-
-    if event_rows:
-        st.dataframe(
-            event_rows,
-            use_container_width=True,
-            hide_index=True
-        )
-    else:
-        st.info("No transaction events detected.")
+    events_html = '<div style="position:relative; padding-left:24px; border-left:2px solid #E2E8F0; margin-left:16px; font-family:Inter,sans-serif;">'
+    
+    for idx, seg in enumerate(verdicts):
+        bScore = bet_scores[idx] if idx < len(bet_scores) else 0
+        
+        is_significant = False
+        title = "Normal Activity"
+        desc = "No major forensic signals detected."
+        dot_color = "#E2E8F0"
+        title_color = "#64748B"
+        icon = "▶"
+        
+        if (seg.get("transaction_executed", 0) or 0) > 50:
+            title = "Transaction Executed"
+            desc = "A confirmed payment or transaction occurred on screen."
+            dot_color = "#10B981"
+            title_color = "#047857"
+            icon = "✓"
+            is_significant = True
+        elif seg.get("qr_detected"):
+            title = "QR / Payment Scan Detected"
+            desc = "A QR code or explicit payment mechanism was found."
+            dot_color = "#F59E0B"
+            title_color = "#D97706"
+            icon = "⬛"
+            is_significant = True
+        elif (seg.get("transaction_likely", 0) or 0) > 50:
+            title = "High Transaction Likelihood"
+            desc = f"Transaction context score is very high ({seg.get('transaction_likely')}%)"
+            dot_color = "#EF4444"
+            title_color = "#B91C1C"
+            icon = "⚠"
+            is_significant = True
+        elif bScore > 50:
+            title = "Betting UI Detected"
+            desc = f"Betting application features found (Score: {bScore}%)"
+            dot_color = "#F59E0B"
+            title_color = "#B45309"
+            icon = "⚠"
+            is_significant = True
+        elif (seg.get("banking_context", 0) or 0) > 40:
+            title = "Wallet / Banking App Opened"
+            desc = f"Financial application context detected (Score: {seg.get('banking_context')}%)"
+            dot_color = "#06B6D4"
+            title_color = "#0369A1"
+            icon = "🏦"
+            is_significant = True
+        elif (seg.get("crypto_context", 0) or 0) > 40:
+            title = "Crypto Application Context"
+            desc = f"Cryptocurrency interface detected (Score: {seg.get('crypto_context')}%)"
+            dot_color = "#A855F7"
+            title_color = "#7E22CE"
+            icon = "₿"
+            is_significant = True
+            
+        start_t_str = f"{seg.get('start_time', 0):.1f}"
+        failed_tx = next((tx for tx in bet_tx if tx.get('transaction_time', '') and start_t_str in tx.get('transaction_time', '')), None)
+        
+        if failed_tx and not failed_tx.get('transaction_used_for_betting'):
+            title = "Failed Transaction Attempt"
+            desc = "A transaction was initiated but did not complete successfully."
+            dot_color = "#991B1B"
+            title_color = "#7F1D1D"
+            icon = "⚠"
+            is_significant = True
+            
+        if is_significant or idx == 0 or idx == len(verdicts) - 1:
+            if idx == 0 and not is_significant:
+                title = "Video Analysis Started"
+                desc = "Beginning chronological scan."
+            if idx == len(verdicts) - 1 and not is_significant:
+                title = "Analysis Complete"
+                desc = "End of video feed."
+                dot_color = "#94A3B8"
+                title_color = "#475569"
+                icon = "■"
+                
+            ocr_html = ""
+            if seg.get("ocr_text"):
+                safe_ocr = str(seg.get("ocr_text")).encode("latin-1", "replace").decode("latin-1")
+                if len(safe_ocr) > 100: safe_ocr = safe_ocr[:100] + "..."
+                ocr_html = f"<div style='margin-top:8px; background:#F8FAFC; border:1px solid #F1F5F9; padding:8px; border-radius:4px; font-family:JetBrains Mono,monospace; font-size:11px; color:#64748B;'><span style='font-weight:bold; color:#94A3B8; margin-right:8px;'>OCR:</span>{safe_ocr}</div>"
+                
+            events_html += f"""
+            <div style="position:relative; margin-bottom:32px;">
+                <div style="position:absolute; left:-37px; top:0; width:24px; height:24px; border-radius:50%; background:{dot_color}; border:4px solid #FFF; display:flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.1);"></div>
+                <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:8px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span style="color:{title_color}; font-size:14px;">{icon}</span>
+                            <span style="color:{title_color}; font-weight:700; font-size:14px;">{title}</span>
+                        </div>
+                        <span style="background:#F8FAFC; padding:4px 8px; border-radius:4px; font-family:JetBrains Mono,monospace; font-size:11px; font-weight:700; color:#94A3B8;">{seg.get('start_time', 0):.1f}s - {seg.get('end_time', 0):.1f}s</span>
+                    </div>
+                    <div style="font-size:13px; color:#475569;">{desc}</div>
+                    {ocr_html}
+                </div>
+            </div>
+            """
+            
+    events_html += "</div>"
+    st.markdown(events_html, unsafe_allow_html=True)
 
 
 # ═══════════════════════════ TAB 3: BETTING ════════════════════════
@@ -1459,77 +1688,269 @@ with tabs[4]:
 
 # ═══════════════════════════ TAB 6: REPORTS ════════════════════════
 with tabs[5]:
-    col1, col2 = st.columns(2)
-
+    
+    # 1. Calculate Verdict
+    has_betting = any(s > 50 for s in bet_scores)
+    has_transactions = len(bet_tx) > 0 or len(crypto_tx) > 0
+    
+    if has_betting and has_transactions:
+        verdict_status = "FAIL"
+        verdict_title = "CRITICAL RISK - Illegal Betting Application with Active Transactions Detected"
+        verdict_color = "background:#FEE2E2; color:#7F1D1D; border:2px solid #FECACA;"
+        icon = "🚨"
+    elif has_betting or has_transactions or len(qr_segments) > 0:
+        verdict_status = "WARNING"
+        verdict_title = "MEDIUM RISK - Suspicious Keywords or Payment Mechanisms Found"
+        verdict_color = "background:#FFF7ED; color:#7C2D12; border:2px solid #FED7AA;"
+        icon = "⚠️"
+    else:
+        verdict_status = "PASS"
+        verdict_title = "LOW RISK - No Major Violations Detected"
+        verdict_color = "background:#D1FAE5; color:#064E3B; border:2px solid #A7F3D0;"
+        icon = "✅"
+        
+    st.markdown(f"""
+    <div style="{verdict_color} border-radius:10px; padding:24px; margin-bottom:30px; display:flex; gap:20px; align-items:flex-start;">
+        <div style="font-size:40px; line-height:1;">{icon}</div>
+        <div>
+            <div style="font-size:0.75rem; font-weight:800; letter-spacing:0.1em; opacity:0.8; margin-bottom:5px;">
+                FINAL COMPLIANCE VERDICT: {verdict_status}
+            </div>
+            <div style="font-size:1.4rem; font-weight:900; margin-bottom:10px;">
+                {verdict_title}
+            </div>
+            <div style="font-size:0.9rem; font-weight:500; opacity:0.9;">
+                Analysis analyzed {segment_count} video segments. 
+                Found {len(qr_segments)} QR codes, {len(bet_tx)} fiat transaction attempts, and {len(crypto_tx)} crypto transaction attempts.
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([1, 1])
+    
     with col1:
-        st.markdown('<div class="section-header">Final Summary</div>', unsafe_allow_html=True)
-        if summary:
-            summary_clean = "\n".join(
-                line for line in summary.splitlines()
-                if not (line.strip() and set(line.strip()) == {"="})
+        st.markdown('<div class="section-header" style="margin-top:0;">Key Evidence Findings</div>', unsafe_allow_html=True)
+        
+        # Key Evidence Table
+        key_evidence = [s for s in verdicts if 
+            (s.get("betting_score", 0) > 50) or 
+            (s.get("transaction_likely", 0) > 50) or 
+            s.get("qr_detected") or 
+            (s.get("transaction_executed", 0) > 0)
+        ]
+        # Calculate max score for sorting
+        for s in key_evidence:
+            s['_max_score'] = max(s.get("transaction_executed", 0) or 0, s.get("transaction_likely", 0) or 0, s.get("betting_score", 0) or 0)
+            
+        key_evidence = sorted(key_evidence, key=lambda x: x['_max_score'], reverse=True)[:10]
+        
+        if key_evidence:
+            table_html = (
+                '<div style="border:1px solid #E2E8F0; border-radius:8px; overflow:hidden; background:#FFF;">'
+                '<table style="width:100%; text-align:left; border-collapse:collapse; font-size:14px; font-family:Inter,sans-serif;">'
+                '<thead style="background:#F8FAFC; border-bottom:1px solid #E2E8F0; color:#475569;">'
+                '<tr>'
+                '<th style="padding:12px;">Time</th>'
+                '<th style="padding:12px;">Violation Signal</th>'
+                '<th style="padding:12px;">Score</th>'
+                '<th style="padding:12px;">Extracted OCR Proof</th>'
+                '</tr>'
+                '</thead>'
+                '<tbody style="font-family:JetBrains Mono,monospace;">'
             )
-
-            st.markdown(f"""
-            <div style='background:#FAFAFA;
-            border:1px solid #E2E8F0;
-            border-radius:10px;
-            padding:20px;
-            font-family:Inter,sans-serif;
-            font-size:15px;
-            line-height:1.8;
-            color:#334155;
-            white-space:pre-wrap;
-            max-height:500px;
-            overflow-y:auto;'>{summary_clean}</div>
-            """, unsafe_allow_html=True)
+            for seg in key_evidence:
+                if (seg.get("transaction_executed", 0) or 0) > 50: signal = "Transaction Executed"
+                elif seg.get("qr_detected"): signal = "QR Payment Code"
+                elif (seg.get("transaction_likely", 0) or 0) > 50: signal = "Transaction Context"
+                elif (seg.get("betting_score", 0) or 0) > 50: signal = "Betting UI"
+                else: signal = "Suspicious Activity"
+                
+                ocr_text = seg.get("ocr_text", "")
+                if len(ocr_text) > 40: ocr_text = ocr_text[:40] + "..."
+                
+                table_html += (
+                    '<tr style="border-bottom:1px solid #F1F5F9;">'
+                    f'<td style="padding:12px; color:#64748B;">{seg.get("start_time", 0):.1f}s - {seg.get("end_time", 0):.1f}s</td>'
+                    f'<td style="padding:12px; color:#1E293B; font-weight:600; font-family:Inter,sans-serif;">{signal}</td>'
+                    f'<td style="padding:12px; color:#DC2626; font-weight:700;">{seg["_max_score"]:.0f}%</td>'
+                    f'<td style="padding:12px; font-size:11px; color:#64748B;">{ocr_text or "No text"}</td>'
+                    '</tr>'
+                )
+            table_html += "</tbody></table></div>"
+            st.markdown(table_html, unsafe_allow_html=True)
         else:
-            st.info("final_summary.txt not found.")
+            st.markdown("<div style='padding:24px; border:1px solid #E2E8F0; border-radius:8px; text-align:center; color:#64748B;'>No significant violations found.</div>", unsafe_allow_html=True)
 
     with col2:
-        st.markdown('<div class="section-header">Verdict Report Preview</div>', unsafe_allow_html=True)
-        if report:
-            report_clean = "\n".join(
-                line for line in report.splitlines()
-                if not (line.strip() and set(line.strip()) == {"="})
-            )
-
-            st.markdown(f"""
-            <div style='background:#FAFAFA;
-            border:1px solid #E2E8F0;
-            border-radius:10px;
-            padding:20px;
-            font-family:Inter,sans-serif;
-            font-size:132x;
-            line-height:1.4;
-            color:#334155;
-            white-space:pre-wrap;
-            max-height:500px;
-            overflow-y:auto;'>{report_clean}</div>
-            """, unsafe_allow_html=True)
+        st.markdown('<div class="section-header" style="margin-top:0;">Attributed Transaction Flows</div>', unsafe_allow_html=True)
+        
+        # Fiat Flow
+        st.markdown("<b style='font-family:Inter,sans-serif; color:#475569; font-size:14px;'>Fiat Payment Flow</b>", unsafe_allow_html=True)
+        if bet_tx:
+            for tx in bet_tx:
+                st.markdown(f"""
+                <div style="display:flex; align-items:center; gap:8px; padding:12px; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; margin-bottom:12px;">
+                    <div style="text-align:center; padding:8px; background:#FFF; border:1px solid #E2E8F0; border-radius:6px; flex-shrink:0;">
+                        <div style="font-size:10px; font-weight:700; color:#94A3B8;">BETTING UI</div>
+                        <div style="font-family:JetBrains Mono,monospace; font-size:12px; font-weight:700; color:#D97706;">Detected</div>
+                    </div>
+                    <div style="color:#94A3B8;">→</div>
+                    <div style="text-align:center; padding:8px; background:#FFF; border:1px solid #E2E8F0; border-radius:6px; flex-shrink:0;">
+                        <div style="font-size:10px; font-weight:700; color:#94A3B8;">QR / INTENT</div>
+                        <div style="font-family:JetBrains Mono,monospace; font-size:12px; font-weight:700; color:#0891B2;">Scanned</div>
+                    </div>
+                    <div style="color:#94A3B8;">→</div>
+                    <div style="text-align:center; padding:8px; background:#FEE2E2; border:1px solid #FECACA; border-radius:6px; flex:1;">
+                        <div style="font-size:10px; font-weight:700; color:#7F1D1D;">TRANSACTION ATTEMPT</div>
+                        <div style="font-family:JetBrains Mono,monospace; font-size:12px; font-weight:700; color:#991B1B;">{tx.get('transaction_time', '')}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
         else:
-            st.info("final_verdict_report.txt not found.")
+            st.markdown("<div style='color:#94A3B8; font-size:13px; font-style:italic; margin-bottom:20px;'>No fiat transactions attributed.</div>", unsafe_allow_html=True)
+            
+        # Crypto Flow
+        st.markdown("<b style='font-family:Inter,sans-serif; color:#475569; font-size:14px;'>Crypto Flow</b>", unsafe_allow_html=True)
+        if crypto_tx:
+            for tx in crypto_tx:
+                is_linked = tx.get('decision') == 'LINKED'
+                bg_color = "#FEE2E2" if is_linked else "#FFFBEB"
+                border_color = "#FECACA" if is_linked else "#FDE68A"
+                text_color = "#7F1D1D" if is_linked else "#92400E"
+                val_color = "#991B1B" if is_linked else "#B45309"
+                
+                st.markdown(f"""
+                <div style="display:flex; align-items:center; gap:8px; padding:12px; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; margin-bottom:12px;">
+                    <div style="text-align:center; padding:8px; background:#FFF; border:1px solid #E2E8F0; border-radius:6px; flex-shrink:0;">
+                        <div style="font-size:10px; font-weight:700; color:#94A3B8;">CRYPTO CONTEXT</div>
+                        <div style="font-family:JetBrains Mono,monospace; font-size:12px; font-weight:700; color:#7C3AED;">Score: {tx.get('crypto_support', 0):.0f}</div>
+                    </div>
+                    <div style="color:#94A3B8;">→</div>
+                    <div style="text-align:center; padding:8px; background:{bg_color}; border:1px solid {border_color}; border-radius:6px; flex:1;">
+                        <div style="font-size:10px; font-weight:700; color:{text_color};">VERDICT: {tx.get('decision', '')}</div>
+                        <div style="font-family:JetBrains Mono,monospace; font-size:12px; font-weight:700; color:{val_color};">Conf: {tx.get('confidence', 0)}%</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("<div style='color:#94A3B8; font-size:13px; font-style:italic;'>No crypto transactions attributed.</div>", unsafe_allow_html=True)
 
-    if crypto_tx:
-        st.markdown('<div class="section-header">Crypto Betting Attribution</div>', unsafe_allow_html=True)
-        st.json(crypto_tx)
-    else:
-        st.markdown("""<div class='verdict-row' style='color:#94A3B8;margin-top:20px;'>
-          No crypto betting attribution data (crypto_betting_attribution.json is empty).
-        </div>""", unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown('<div class="section-header">Raw Data Audit Logs</div>', unsafe_allow_html=True)
+    
+    audit_tabs = st.tabs(["Segment Ledger", "Fiat Audit", "Crypto Audit", "JSON Downloads"])
+    
+    with audit_tabs[0]:
+        table_html = (
+            '<div style="border:1px solid #E2E8F0; border-radius:8px; overflow:hidden; background:#FFF; max-height:500px; overflow-y:auto;">'
+            '<table style="width:100%; text-align:left; border-collapse:collapse; font-size:12px; font-family:Inter,sans-serif;">'
+            '<thead style="background:#F8FAFC; border-bottom:1px solid #E2E8F0; color:#475569; position:sticky; top:0;">'
+            '<tr>'
+            '<th style="padding:10px;">Seg # (Time)</th>'
+            '<th style="padding:10px;">OCR Snippet</th>'
+            '<th style="padding:10px; text-align:center;">Bank %</th>'
+            '<th style="padding:10px; text-align:center;">Crypto %</th>'
+            '<th style="padding:10px; text-align:center;">Tx Likely %</th>'
+            '<th style="padding:10px; text-align:center;">Tx Exec %</th>'
+            '<th style="padding:10px; text-align:center;">Bet Score</th>'
+            '<th style="padding:10px; text-align:center;">QR?</th>'
+            '</tr>'
+            '</thead>'
+            '<tbody style="font-family:JetBrains Mono,monospace;">'
+        )
+        for idx, seg in enumerate(verdicts):
+            bScore = bet_scores[idx] if idx < len(bet_scores) else 0
+            bank_style = "color:#0891B2; font-weight:bold; background:#ECFEFF;" if (seg.get("banking_context", 0) or 0) > 50 else "color:#94A3B8;"
+            crypto_style = "color:#7C3AED; font-weight:bold; background:#F5F3FF;" if (seg.get("crypto_context", 0) or 0) > 50 else "color:#94A3B8;"
+            txl_style = "color:#DC2626; font-weight:bold; background:#FEF2F2;" if (seg.get("transaction_likely", 0) or 0) > 50 else "color:#94A3B8;"
+            txe_style = "color:#059669; font-weight:bold; background:#ECFDF5;" if (seg.get("transaction_executed", 0) or 0) > 50 else "color:#94A3B8;"
+            bet_style = "color:#D97706; font-weight:bold; background:#FFFBEB;" if bScore > 50 else "color:#94A3B8;"
+            qr_style = "<span style='background:#FEF3C7; color:#92400E; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold;'>YES</span>" if seg.get("qr_detected") else "<span style='color:#CBD5E1;'>-</span>"
+            
+            ocr_text = seg.get("ocr_text", "")
+            if len(ocr_text) > 30: ocr_text = ocr_text[:30] + "..."
+            
+            table_html += (
+                '<tr style="border-bottom:1px solid #F1F5F9; hover:background:#F8FAFC;">'
+                f'<td style="padding:10px; color:#64748B; white-space:nowrap;"><span style="font-weight:bold; color:#334155;">#{seg.get("segment_index", "?")}</span> <br/>{seg.get("start_time", 0):.1f}s - {seg.get("end_time", 0):.1f}s</td>'
+                f'<td style="padding:10px; color:#64748B; font-size:10px;" title="{seg.get("ocr_text", "")}">{ocr_text or "-"}</td>'
+                f'<td style="padding:10px; text-align:center; {bank_style}">{seg.get("banking_context", 0) or 0}%</td>'
+                f'<td style="padding:10px; text-align:center; {crypto_style}">{seg.get("crypto_context", 0) or 0}%</td>'
+                f'<td style="padding:10px; text-align:center; {txl_style}">{seg.get("transaction_likely", 0) or 0}%</td>'
+                f'<td style="padding:10px; text-align:center; {txe_style}">{seg.get("transaction_executed", 0) or 0}%</td>'
+                f'<td style="padding:10px; text-align:center; {bet_style}">{bScore}%</td>'
+                f'<td style="padding:10px; text-align:center;">{qr_style}</td>'
+                '</tr>'
+            )
+        table_html += "</tbody></table></div>"
+        st.markdown(table_html, unsafe_allow_html=True)
 
-    with st.expander("📦 Raw Data Export"):
-        c1, c2 = st.columns(2)
+    with audit_tabs[1]:
+        if bet_tx:
+            fiat_html = (
+                '<div style="border:1px solid #E2E8F0; border-radius:8px; overflow:hidden; background:#FFF;">'
+                '<table style="width:100%; text-align:left; border-collapse:collapse; font-size:13px; font-family:Inter,sans-serif;">'
+                '<thead style="background:#F8FAFC; border-bottom:1px solid #E2E8F0; color:#475569;">'
+                '<tr><th style="padding:12px;">Time Window</th><th style="padding:12px;">Status</th><th style="padding:12px;">Linked to Betting?</th></tr>'
+                '</thead><tbody style="font-family:JetBrains Mono,monospace;">'
+            )
+            for tx in bet_tx:
+                is_bet = tx.get("transaction_used_for_betting")
+                row_bg = "background:#FEF2F2;" if is_bet else ""
+                status_txt = "Executed" if is_bet else "Attempted"
+                link_html = "<span style='background:#FEE2E2; color:#7F1D1D; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;'>YES - VIOLATION</span>" if is_bet else "<span style='color:#D97706; font-weight:bold;'>Attempted / Unknown</span>"
+                
+                fiat_html += f'<tr style="border-bottom:1px solid #F1F5F9; {row_bg}">'
+                fiat_html += f'<td style="padding:12px; color:#334155; font-weight:bold;">{tx.get("transaction_time", "")}</td>'
+                fiat_html += f'<td style="padding:12px; color:#64748B;">{status_txt}</td>'
+                fiat_html += f'<td style="padding:12px;">{link_html}</td></tr>'
+            fiat_html += "</tbody></table></div>"
+            st.markdown(fiat_html, unsafe_allow_html=True)
+        else:
+            st.info("No fiat transactions recorded.")
+            
+    with audit_tabs[2]:
+        if crypto_tx:
+            cryp_html = (
+                '<div style="border:1px solid #E2E8F0; border-radius:8px; overflow:hidden; background:#FFF;">'
+                '<table style="width:100%; text-align:left; border-collapse:collapse; font-size:13px; font-family:Inter,sans-serif;">'
+                '<thead style="background:#F8FAFC; border-bottom:1px solid #E2E8F0; color:#475569;">'
+                '<tr><th style="padding:12px;">Segment Index</th><th style="padding:12px;">Crypto Support</th><th style="padding:12px;">Betting Purpose</th><th style="padding:12px;">AI Decision</th><th style="padding:12px;">Confidence</th></tr>'
+                '</thead><tbody style="font-family:JetBrains Mono,monospace;">'
+            )
+            for tx in crypto_tx:
+                is_linked = tx.get("decision") == "LINKED"
+                row_bg = "background:#FEF2F2;" if is_linked else ""
+                dec_html = f"<span style='background:#FEE2E2; color:#7F1D1D; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;'>{tx.get('decision')}</span>" if is_linked else f"<span style='background:#FEF3C7; color:#92400E; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;'>{tx.get('decision')}</span>"
+                
+                cryp_html += f'<tr style="border-bottom:1px solid #F1F5F9; {row_bg}">'
+                cryp_html += f'<td style="padding:12px; color:#334155; font-weight:bold;">#{tx.get("segment_index", "?")}</td>'
+                cryp_html += f'<td style="padding:12px; color:#7C3AED; font-weight:bold;">{tx.get("crypto_support", 0):.0f}%</td>'
+                cryp_html += f'<td style="padding:12px; color:#D97706; font-weight:bold;">{tx.get("betting_purpose", 0):.0f}%</td>'
+                cryp_html += f'<td style="padding:12px;">{dec_html}</td>'
+                cryp_html += f'<td style="padding:12px; color:#64748B; font-weight:bold;">{tx.get("confidence", 0)}%</td></tr>'
+            cryp_html += "</tbody></table></div>"
+            st.markdown(cryp_html, unsafe_allow_html=True)
+        else:
+            st.info("No crypto transactions recorded.")
+
+    with audit_tabs[3]:
+        c1, c2, c3, c4 = st.columns(4)
         with c1:
             st.download_button("⬇ segment_verdicts.json",
                 data=json.dumps(verdicts, indent=2),
-                file_name="segment_verdicts.json", mime="application/json")
-            st.download_button("⬇ betting_segment_scores.json",
-                data=json.dumps(bet_scores, indent=2),
-                file_name="betting_segment_scores.json", mime="application/json")
+                file_name="segment_verdicts.json", mime="application/json", use_container_width=True)
         with c2:
-            st.download_button("⬇ betting_transaction_attribution.json",
+            st.download_button("⬇ betting_scores.json",
+                data=json.dumps(bet_scores, indent=2),
+                file_name="betting_scores.json", mime="application/json", use_container_width=True)
+        with c3:
+            st.download_button("⬇ betting_tx_attr.json",
                 data=json.dumps(bet_tx, indent=2),
-                file_name="betting_transaction_attribution.json", mime="application/json")
-            st.download_button("⬇ crypto_betting_attribution.json",
+                file_name="betting_tx_attr.json", mime="application/json", use_container_width=True)
+        with c4:
+            st.download_button("⬇ crypto_tx_attr.json",
                 data=json.dumps(crypto_tx, indent=2),
-                file_name="crypto_betting_attribution.json", mime="application/json")
+                file_name="crypto_tx_attr.json", mime="application/json", use_container_width=True)
+
