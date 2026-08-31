@@ -370,7 +370,7 @@ with st.sidebar:
                         
                         # Upload to API
                         files = {'file': (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                        resp = requests.post("http://10.244.1.33:8000/analyze", files=files)
+                        resp = requests.post("http://127.0.0.1:8000/analyze", files=files)
                         resp.raise_for_status()
                         task_id = resp.json()["task_id"]
                         
@@ -378,7 +378,7 @@ with st.sidebar:
                         
                         # Poll for status
                         while True:
-                            status_resp = requests.get(f"http://10.244.1.33:8000/status/{task_id}")
+                            status_resp = requests.get(f"http://127.0.0.1:8000/status/{task_id}")
                             if status_resp.status_code == 200:
                                 data = status_resp.json()
                                 progress = data.get("progress", 0.0)
@@ -417,7 +417,7 @@ with st.sidebar:
                         
                         # Send to Crawl API
                         payload = {"url": crawl_url, "duration": crawl_duration}
-                        resp = requests.post("http://10.244.1.33:8000/crawl", json=payload)
+                        resp = requests.post("http://127.0.0.1:8000/crawl", json=payload)
                         resp.raise_for_status()
                         task_id = resp.json()["task_id"]
                         
@@ -425,7 +425,7 @@ with st.sidebar:
                         
                         # Poll for status
                         while True:
-                            status_resp = requests.get(f"http://10.244.1.33:8000/status/{task_id}")
+                            status_resp = requests.get(f"http://127.0.0.1:8000/status/{task_id}")
                             if status_resp.status_code == 200:
                                 data = status_resp.json()
                                 progress = data.get("progress", 0.0)
@@ -452,7 +452,7 @@ with st.sidebar:
     
     # Check existing outputs via API
     try:
-        analyses_resp = requests.get("http://10.244.1.33:8000/analyses_detailed")
+        analyses_resp = requests.get("http://127.0.0.1:8000/analyses_detailed")
         if analyses_resp.status_code == 200:
             detailed = analyses_resp.json()
             # Filter to only show complete tasks
@@ -513,7 +513,7 @@ output_path = Path(output_dir)
 # ─────────────────────────── LOAD DATA ─────────────────────────────
 summary_data = {}
 try:
-    summary_resp = requests.get(f"http://10.244.1.33:8000/analyses/{output_dir}/summary")
+    summary_resp = requests.get(f"http://127.0.0.1:8000/analyses/{output_dir}/summary")
     if summary_resp.status_code == 200:
         summary_data = summary_resp.json()
 except Exception:
@@ -1712,11 +1712,20 @@ with tabs[4]:
         }
         
         detected_cats = seg.get("categorized_hits", {})
+        
+        # Check if there are any actual keywords found across all categories
+        has_keywords = False
         if detected_cats:
+            for keywords in detected_cats.values():
+                if keywords:
+                    has_keywords = True
+                    break
+                    
+        top_evidence_words = []
+        
+        if has_keywords:
             st.markdown('<div class="section-header" style="margin-top:20px; font-size:0.9rem;">Bounding Box Evidence Legend</div>', unsafe_allow_html=True)
             cat_html = "<div style='display:flex;flex-wrap:wrap;gap:10px;margin-bottom:15px;'>"
-            
-            top_evidence_words = []
             
             for cat, keywords in detected_cats.items():
                 if not keywords:
@@ -1735,40 +1744,50 @@ with tabs[4]:
             cat_html += "</div>"
             st.markdown(cat_html, unsafe_allow_html=True)
             
-            # --- Generate Segment Summary ---
-            st.markdown('<div class="section-header" style="margin-top:20px; font-size:0.9rem;">Segment Context Summary</div>', unsafe_allow_html=True)
+        # --- Generate Segment Summary ---
+        st.markdown('<div class="section-header" style="margin-top:20px; font-size:0.9rem;">Segment Context Summary</div>', unsafe_allow_html=True)
+        
+        bet_score = bet_scores[st.session_state.seg_idx_sel] if st.session_state.seg_idx_sel < len(bet_scores) else 0
+        bank_score = seg.get("banking_context", 0) or 0
+        
+        bullets = []
+        
+        # Primary Intent (Betting)
+        if bet_score > 70:
+            bullets.append(f"<li>🎯 <strong>Primary Intent:</strong> High Betting Activity ({bet_score:.1f}% Confidence)</li>")
+        elif bet_score > 30:
+            bullets.append(f"<li>🎯 <strong>Primary Intent:</strong> Moderate Betting Relevance ({bet_score:.1f}% Confidence)</li>")
             
-            bet_score = bet_scores[st.session_state.seg_idx_sel] if st.session_state.seg_idx_sel < len(bet_scores) else 0
-            bank_score = seg.get("banking_context", 0) or 0
+        # Financial Context
+        if bank_score > 50:
+            bullets.append(f"<li>💰 <strong>Financial Context:</strong> Active Payment/Banking UI Detected ({bank_score:.1f}% Confidence)</li>")
+        elif seg.get("qr_detected"):
+            bullets.append(f"<li>💰 <strong>Financial Context:</strong> QR Code (likely payment-related) Detected</li>")
             
-            summary_sentences = []
-            if bet_score > 70:
-                summary_sentences.append(f"This segment exhibits a **high Betting confidence ({bet_score:.1f}/100)**.")
-            elif bet_score > 30:
-                summary_sentences.append(f"This segment shows **moderate Betting relevance ({bet_score:.1f}/100)**.")
+        # Visual Evidence
+        if top_evidence_words:
+            unique_top = list(set(top_evidence_words))[:5]
+            evidence_str = "', '".join(unique_top)
+            bullets.append(f"<li>📸 <strong>Visual Evidence:</strong> Found '{evidence_str}'</li>")
             
-            if bank_score > 50:
-                summary_sentences.append(f"It also contains a **strong Banking context ({bank_score:.1f}%)**.")
-            elif seg.get("qr_detected"):
-                summary_sentences.append(f"A **QR Code** (likely payment-related) was detected on screen.")
-                
-            if top_evidence_words:
-                unique_top = list(set(top_evidence_words))[:5]
-                evidence_str = "', '".join(unique_top)
-                summary_sentences.append(f"OpenCV identified critical visual evidence on screen including **'{evidence_str}'**.")
-                
-            if not summary_sentences:
-                summary_sentences.append("This segment contains general UI navigation with minimal financial or betting context.")
-                
-            summary_text = " ".join(summary_sentences)
+        # Critical Event (Transaction Executed flag from engine)
+        if seg.get("transaction_executed", 0) > 50:
+            bullets.append(f"<li style='color:#DC2626;'>🚨 <strong>Critical Event:</strong> A financial transaction was likely executed in this frame.</li>")
+        elif seg.get("transaction_likely", 0) > 50:
+            bullets.append(f"<li style='color:#D97706;'>⚠️ <strong>Warning:</strong> User is actively attempting a financial transaction.</li>")
             
-            st.markdown(f"""
-            <div style='background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:16px;margin-bottom:20px;'>
-              <div style='font-family:Inter,sans-serif;font-size:0.9rem;color:#166534;line-height:1.5;'>
-                {summary_text}
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
+        if not bullets:
+            bullets.append("<li>ℹ️ <strong>Context:</strong> General UI navigation with minimal financial or betting indicators.</li>")
+            
+        bullets_html = "".join(bullets)
+        
+        st.markdown(f"""
+        <div style='background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:16px;margin-bottom:20px;'>
+          <ul style='font-family:Inter,sans-serif;font-size:0.9rem;color:#166534;line-height:1.8;margin:0;padding-left:20px;'>
+            {bullets_html}
+          </ul>
+        </div>
+        """, unsafe_allow_html=True)
 
         # Downloads Row
         dl_col1, dl_col2 = st.columns(2)

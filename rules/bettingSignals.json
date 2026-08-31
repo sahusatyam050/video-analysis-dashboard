@@ -285,6 +285,14 @@
     {
       "phrase": "rollover requirement",
       "weight": 10
+    },
+    {
+      "phrase": "my bet history",
+      "weight": 15
+    },
+    {
+      "phrase": "all bets",
+      "weight": 15
     }
   ],
   "wallet_phrases": [
@@ -323,6 +331,10 @@
     {
       "phrase": "bonus money",
       "weight": 8
+    },
+    {
+      "phrase": "cashed out",
+      "weight": 15
     }
   ],
   "fantasy_ui_phrases": [
@@ -431,10 +443,22 @@
     {
       "phrase": "live casino",
       "weight": 12
+    },
+    {
+      "phrase": "spribe",
+      "weight": 20
+    },
+    {
+      "phrase": "flew away",
+      "weight": 20
+    },
+    {
+      "phrase": "provably fair",
+      "weight": 20
     }
   ],
   "odds_rules": {
-    "decimal_odds_regex": "(?<!₹|\\$|€|£)\\b\\d{1,2}(?:\\.\\d{1,2})\\b",
+    "decimal_odds_regex": "(?<!\u20b9|\\$|\u20ac|\u00a3)\\b\\d{1,2}(?:\\.\\d{1,2})\\b",
     "context_words": [
       "odds",
       "market",
@@ -619,6 +643,18 @@
     {
       "phrase": "free bet",
       "weight": 8
+    },
+    {
+      "phrase": "invitationcode",
+      "weight": 5
+    },
+    {
+      "phrase": "invitation code",
+      "weight": 5
+    },
+    {
+      "phrase": "register",
+      "weight": 5
     }
   ],
   "suppressors": {
