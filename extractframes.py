@@ -22,45 +22,65 @@ from engine.final_summary import generate_final_summary
 from engine.final_summary import load_segment_verdicts
 from engine.betting_classifier import run_betting_analysis
 from engine.run_crypto_betting_analysis import run_analysis as run_crypto_betting_analysis# -------------------- KEYWORDS & COLORS --------------------
-CATEGORIZED_KEYWORDS = {
-    "Financial": [
-        "deposit", "withdraw", "withdrawal", "wallet", "cashier", 
-        "balance", "transfer", "payout", "topup", "add money", 
-        "bank", "upi", "upi id", "gateway", "currency", "inr", "usd", 
-        "crypto", "usdt", "usdc", "bitcoin", "btc", "ethereum", "eth", "tron", "bnb",
-        "transaction", "my transactions", "recharge", "imps", "neft", "rtgs", "ecs", "ach",
-        "gpay", "google pay", "phonepe", "phone pe", "paytm", "pay tm", "amazon pay", "bhim",
-        "razorpay", "cashfree", "payu", "ccavenue", "billdesk", "rupay", "visa", "mastercard",
-        "available balance", "winning balance", "deposit balance", "bonus balance",
-        "beneficiary", "account number", "reference number", "transaction id",
-        "qr", "qr code", "scan & pay", "scan qr"
-    ],
-    "Gaming": [
-        "casino", "slot", "slots", "roulette", "blackjack", "poker", 
-        "baccarat", "sports", "live sports", "fantasy", "betting", 
-        "odds", "match", "tournament", "jackpot", "table games", 
-        "crash game", "aviator", "mines", "spin"
-    ],
-    "Rewards": [
-        "bonus", "referral", "rewards", "cashback", "spin", "wheel", 
-        "promo", "promotion", "free bet", "vip", "welcome bonus", 
-        "deposit bonus", "loyalty", "points", "claim"
-    ],
-    "Authentication": [
-        "login", "sign in", "signin", "register", "sign up", "signup", 
-        "kyc", "verify", "verification", "otp", "password", "account", 
-        "forgot password", "join now", "register now", "phone number", "phone", "mobile", "mobile number", "email", "e-mail"
-    ],
-    "Legal": [
-        "terms", "privacy", "policy", "license", "terms of service", 
-        "responsible gaming", "18+", "anti-money laundering", "aml", 
-        "disclaimer", "curacao", "malta", "isom"
-    ],
-    "Social": [
-        "telegram", "whatsapp", "discord", "instagram", "facebook", 
-        "twitter", "support", "contact us", "live chat", "channel"
-    ]
-}
+def load_bounding_box_keywords():
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    keywords = {
+        "Financial": [],
+        "Gaming": [],
+        "Rewards": [],
+        "Authentication": [
+            "login", "sign in", "signin", "register", "sign up", "signup", 
+            "kyc", "verify", "verification", "otp", "password", "account", 
+            "forgot password", "join now", "register now", "phone number", 
+            "phone", "mobile", "mobile number", "email", "e-mail"
+        ],
+        "Legal": [
+            "terms", "privacy", "policy", "license", "terms of service", 
+            "responsible gaming", "18+", "anti-money laundering", "aml", 
+            "disclaimer", "curacao", "malta", "isom"
+        ],
+        "Social": [
+            "telegram", "whatsapp", "discord", "instagram", "facebook", 
+            "twitter", "support", "contact us", "live chat", "channel"
+        ]
+    }
+    
+    # Load transaction signals (Banking/Crypto/Payments)
+    try:
+        with open(os.path.join(BASE_DIR, "rules", "transactionSignals.json"), "r") as f:
+            ts = json.load(f)
+            roles = ts.get("roles", {})
+            keywords["Financial"].extend(roles.get("financial_context", []))
+            keywords["Financial"].extend(roles.get("crypto_context", []))
+            keywords["Financial"].extend(roles.get("payment_interface", []))
+    except Exception as e:
+        logging.warning(f"Could not load transactionSignals.json for bounding boxes: {e}")
+        
+    # Load betting signals (Brands, Casino, Sportsbook)
+    try:
+        with open(os.path.join(BASE_DIR, "rules", "bettingSignals.json"), "r") as f:
+            bs = json.load(f)
+            for brand in bs.get("brand_rules", []):
+                keywords["Gaming"].append(brand["term"])
+            for phrase_list in ["betting_phrases", "casino_phrases", "sportsbook_ui_phrases", "fantasy_ui_phrases"]:
+                for item in bs.get(phrase_list, []):
+                    keywords["Gaming"].append(item["phrase"])
+            for item in bs.get("wallet_phrases", []):
+                keywords["Financial"].append(item["phrase"])
+            for item in bs.get("promo_phrases", []):
+                keywords["Rewards"].append(item["phrase"])
+    except Exception as e:
+        logging.warning(f"Could not load bettingSignals.json for bounding boxes: {e}")
+        
+    # Deduplicate and sort by length descending (longest phrases first for better matching)
+    for k in keywords:
+        unique_words = list(set(keywords[k]))
+        unique_words.sort(key=len, reverse=True)
+        keywords[k] = unique_words
+        
+    return keywords
+
+CATEGORIZED_KEYWORDS = load_bounding_box_keywords()
 
 CATEGORY_COLORS_BGR = {
     "Financial": (0, 200, 0),       
@@ -81,8 +101,11 @@ PAYMENT_INDICATOR_PATTERNS = {
 }
 
 def draw_text_bounding_boxes(rgb, data, offset_x=0, offset_y=0, scale_factor=1.0):
+    hits = {cat: [] for cat in CATEGORIZED_KEYWORDS.keys()}
+    hits["Payment_Indicator"] = []
+
     if not data or 'text' not in data:
-        return
+        return hits
         
     n_boxes = len(data['text'])
     words = [str(w).strip().lower() for w in data['text']]
@@ -107,6 +130,7 @@ def draw_text_bounding_boxes(rgb, data, offset_x=0, offset_y=0, scale_factor=1.0
                     h = int((max(bottoms) - min(tops)) / scale_factor)
                     
                     cv2.rectangle(rgb, (x-2, y-2), (x + w + 2, y + h + 2), color, 2)
+                    hits[category].append(keyword)
                     
     # Check regex patterns
     color = CATEGORY_COLORS_BGR.get("Payment_Indicator", (0, 0, 255))
@@ -121,7 +145,10 @@ def draw_text_bounding_boxes(rgb, data, offset_x=0, offset_y=0, scale_factor=1.0
                 w = int(data['width'][i] / scale_factor)
                 h = int(data['height'][i] / scale_factor)
                 cv2.rectangle(rgb, (x-2, y-2), (x + w + 2, y + h + 2), color, 2)
+                hits["Payment_Indicator"].append(cat_name)
                 break
+                
+    return hits
 
 
 # -------------------- TESSERACT SETUP --------------------
@@ -251,7 +278,10 @@ def extract_amounts(text):
 def extract_qr_text(rgb):
     detector = cv2.QRCodeDetector()
 
-    data, points, _ = detector.detectAndDecode(rgb)
+    try:
+        data, points, _ = detector.detectAndDecode(rgb)
+    except Exception as e:
+        return None, None
 
     # Must actually decode content
     if not data or not data.strip():
@@ -290,7 +320,8 @@ def startSegment(startTime, frameIndex):
         "frame_texts": [],
         "qrTexts": [],
         "amounts": Counter(),
-        "counterparties": Counter()
+        "counterparties": Counter(),
+        "categorized_hits": {}
     }
 
 
@@ -387,216 +418,229 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_cal
     # ---- OCR lines collected in memory, flushed once after loop ----
     ocr_lines = []
 
-    for packet in container.demux(stream):
-        for frame in packet.decode():
+    try:
+        for packet in container.demux(stream):
+            for frame in packet.decode():
 
-            # Skip frames without timestamps
-            if frame.pts is None:
-                continue
+                # Skip frames without timestamps
+                if frame.pts is None:
+                    continue
 
-            ts = float(frame.pts * stream.time_base)
+                ts = float(frame.pts * stream.time_base)
 
-            if progress_callback and total_duration and total_duration > 0:
-                progress = min(1.0, max(0.0, ts / total_duration))
-                progress_callback(progress)
+                if progress_callback and total_duration and total_duration > 0:
+                    progress = min(1.0, max(0.0, ts / total_duration))
+                    progress_callback(progress)
 
-            # Sample frames based on time interval
-            if ts < nextTime:
-                continue
-            nextTime = ts + sampleSeconds
+                # Sample frames based on time interval
+                if ts < nextTime:
+                    continue
+                nextTime = ts + sampleSeconds
 
-            rgb = frame.to_ndarray(format="rgb24")
+                rgb = frame.to_ndarray(format="rgb24")
 
-            # ---------- CHEAP PIXEL HASH CHECK ----------
-            # Resize to 64x64 grayscale for fast comparison
-            raw_gray_small = cv2.resize(
-                cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY),
-                (64, 64)
-            )
-
-            if prev_gray_small is not None:
-                pixel_diff = np.mean(
-                    np.abs(raw_gray_small.astype(np.float32) - prev_gray_small.astype(np.float32))
-                ) / 255.0
-                frame_changed = pixel_diff >= PIXEL_DIFF_THRESHOLD
-            else:
-                frame_changed = True
-
-            prev_gray_small = raw_gray_small
-
-            if frame_changed or frames_since_last_ocr >= MAX_REUSE_FRAMES:
-                # ---------- OCR (DUAL PASS STRATEGY) ----------
-                gray, processed = preprocess_for_ocr(rgb)
-
-                # First OCR pass on processed image
-                data = pytesseract.image_to_data(
-                    processed,
-                    lang="eng",
-                    config=tesseract_config,
-                    output_type=Output.DICT
+                # ---------- CHEAP PIXEL HASH CHECK ----------
+                # Resize to 64x64 grayscale for fast comparison
+                raw_gray_small = cv2.resize(
+                    cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY),
+                    (64, 64)
                 )
-                text = " ".join([str(w) for w in data["text"] if str(w).strip()])
 
-                # Second OCR pass only if raw text is not truly empty
-                # and still missing digits or payment keywords
-                if (
-                    len(text.strip()) >= 15
-                    and not DIGIT_PATTERN.search(text)
-                    and "paid" not in text.lower()
-                ):
+                if prev_gray_small is not None:
+                    pixel_diff = np.mean(
+                        np.abs(raw_gray_small.astype(np.float32) - prev_gray_small.astype(np.float32))
+                    ) / 255.0
+                    frame_changed = pixel_diff >= PIXEL_DIFF_THRESHOLD
+                else:
+                    frame_changed = True
+
+                prev_gray_small = raw_gray_small
+
+                if frame_changed or frames_since_last_ocr >= MAX_REUSE_FRAMES:
+                    # ---------- OCR (DUAL PASS STRATEGY) ----------
+                    gray, processed = preprocess_for_ocr(rgb)
+
+                    # First OCR pass on processed image
                     data = pytesseract.image_to_data(
-                        gray,
+                        processed,
                         lang="eng",
-                        config=(
-                            "--oem 1 --psm 6 "
-                            "-c tessedit_char_whitelist="
-                            "₹0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                        ),
+                        config=tesseract_config,
                         output_type=Output.DICT
                     )
                     text = " ".join([str(w) for w in data["text"] if str(w).strip()])
 
-                norm_text = normalizeText(text)
-                draw_text_bounding_boxes(rgb, data, scale_factor=2.0)
+                    # Second OCR pass only if raw text is not truly empty
+                    # and still missing digits or payment keywords
+                    if (
+                        len(text.strip()) >= 15
+                        and not DIGIT_PATTERN.search(text)
+                        and "paid" not in text.lower()
+                    ):
+                        data = pytesseract.image_to_data(
+                            gray,
+                            lang="eng",
+                            config=(
+                                "--oem 1 --psm 6 "
+                                "-c tessedit_char_whitelist="
+                                "₹0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                            ),
+                            output_type=Output.DICT
+                        )
+                        text = " ".join([str(w) for w in data["text"] if str(w).strip()])
 
-                # ---------- ROI OCR FOR PAYMENT AREA ----------
-                # Only run ROI pass if frame has meaningful content but
-                # still missing amount and payment keywords
-                if (
-                    len(text.strip()) >= 15
-                    and not extract_amounts(norm_text)
-                    and not any(k in norm_text for k in ("paid", "payment", "success"))
-                ):
-                    roi = extract_payment_roi(rgb)
-                    roi_gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
-                    roi_gray = cv2.resize(
-                        roi_gray, None,
-                        fx=2, fy=2,
-                        interpolation=cv2.INTER_CUBIC
-                    )
+                    norm_text = normalizeText(text)
+                    frame_hits = draw_text_bounding_boxes(rgb, data, scale_factor=2.0)
+                    if currentSegment is not None:
+                        for cat, words in frame_hits.items():
+                            if cat not in currentSegment["categorized_hits"]:
+                                currentSegment["categorized_hits"][cat] = set()
+                            currentSegment["categorized_hits"][cat].update(words)
 
-                    roi_data = pytesseract.image_to_data(
-                        roi_gray,
-                        lang="eng",
-                        config="--oem 1 --psm 6",
-                        output_type=Output.DICT
-                    )
+                    # ---------- ROI OCR FOR PAYMENT AREA ----------
+                    # Only run ROI pass if frame has meaningful content but
+                    # still missing amount and payment keywords
+                    if (
+                        len(text.strip()) >= 15
+                        and not extract_amounts(norm_text)
+                        and not any(k in norm_text for k in ("paid", "payment", "success"))
+                    ):
+                        roi = extract_payment_roi(rgb)
+                        roi_gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+                        roi_gray = cv2.resize(
+                            roi_gray, None,
+                            fx=2, fy=2,
+                            interpolation=cv2.INTER_CUBIC
+                        )
+
+                        roi_data = pytesseract.image_to_data(
+                            roi_gray,
+                            lang="eng",
+                            config="--oem 1 --psm 6",
+                            output_type=Output.DICT
+                        )
                     
-                    roi_text = " ".join([str(w) for w in roi_data["text"] if str(w).strip()])
+                        roi_text = " ".join([str(w) for w in roi_data["text"] if str(w).strip()])
 
-                    if roi_text.strip():
-                        norm_text += " " + normalizeText(roi_text)
+                        if roi_text.strip():
+                            norm_text += " " + normalizeText(roi_text)
                         
-                        h, w, _ = rgb.shape
-                        y1 = int(0.30 * h)
-                        x1 = int(0.10 * w)
-                        draw_text_bounding_boxes(rgb, roi_data, offset_x=x1, offset_y=y1, scale_factor=2.0)
+                            h, w, _ = rgb.shape
+                            y1 = int(0.30 * h)
+                            x1 = int(0.10 * w)
+                            roi_hits = draw_text_bounding_boxes(rgb, roi_data, offset_x=x1, offset_y=y1, scale_factor=2.0)
+                            if currentSegment is not None:
+                                for cat, words in roi_hits.items():
+                                    if cat not in currentSegment["categorized_hits"]:
+                                        currentSegment["categorized_hits"][cat] = set()
+                                    currentSegment["categorized_hits"][cat].update(words)
 
-                prev_norm_text = norm_text
-                frames_since_last_ocr = 0
+                    prev_norm_text = norm_text
+                    frames_since_last_ocr = 0
 
-            else:
-                # Frame almost identical to previous — reuse OCR result
-                norm_text = prev_norm_text
-                frames_since_last_ocr += 1
+                else:
+                    # Frame almost identical to previous — reuse OCR result
+                    norm_text = prev_norm_text
+                    frames_since_last_ocr += 1
                 
 
-            # Token extraction
-            tokens = cleanTokens(extractTokens(norm_text))
-            frameAnchors = anchorTokens(tokens)
+                # Token extraction
+                tokens = cleanTokens(extractTokens(norm_text))
+                frameAnchors = anchorTokens(tokens)
 
-            # Initialize first segment
-            if currentSegment is None:
-                currentSegment = startSegment(ts, frameIndex)
-                similarity = 1.0
-                lowCount = 0
+                # Initialize first segment
+                if currentSegment is None:
+                    currentSegment = startSegment(ts, frameIndex)
+                    similarity = 1.0
+                    lowCount = 0
 
-            # ---------- SMART QR DETECTION ----------
-            # Skip QR scan only when segment is stable AND QR already found.
-            # Always scan on new/changing screens.
-            already_has_qr = bool(currentSegment.get("qrTexts"))
-            screen_stable  = lowCount == 0 and len(currentSegment["frames"]) > 5
+                # ---------- SMART QR DETECTION ----------
+                # Skip QR scan only when segment is stable AND QR already found.
+                # Always scan on new/changing screens.
+                already_has_qr = bool(currentSegment.get("qrTexts"))
+                screen_stable  = lowCount == 0 and len(currentSegment["frames"]) > 5
 
-            if not (already_has_qr and screen_stable):
-               qr_text, qr_points = extract_qr_text(rgb)
+                if not (already_has_qr and screen_stable):
+                   qr_text, qr_points = extract_qr_text(rgb)
 
-               if qr_text:
+                   if qr_text:
 
-                    if (
-                        qr_text.lower().startswith("upi://")
-                        or "pay" in qr_text.lower()
-                        or "payment" in qr_text.lower()
-                    ):
-                        currentSegment["qrTexts"].append(qr_text)
-                        if qr_points is not None:
-                            qr_points = qr_points.astype(int)
-                            cv2.polylines(rgb, [qr_points], True, (0, 255, 0), 5)
+                        if (
+                            qr_text.lower().startswith("upi://")
+                            or "pay" in qr_text.lower()
+                            or "payment" in qr_text.lower()
+                        ):
+                            currentSegment["qrTexts"].append(qr_text)
+                            if qr_points is not None:
+                                qr_points = qr_points.astype(int)
+                                cv2.polylines(rgb, [qr_points], True, (0, 255, 0), 5)
 
-            # Compute anchor stability for segmentation
-            stable_anchors = {
-                a for a, c in currentSegment["anchor_freq"].items()
-                if c >= 3
-            }
+                # Compute anchor stability for segmentation
+                stable_anchors = {
+                    a for a, c in currentSegment["anchor_freq"].items()
+                    if c >= 3
+                }
 
-            if not stable_anchors:
-                similarity = 1.0
-            else:
-                matched = sum(1 for a in stable_anchors if a in frameAnchors)
-                similarity = matched / len(stable_anchors)
+                if not stable_anchors:
+                    similarity = 1.0
+                else:
+                    matched = sum(1 for a in stable_anchors if a in frameAnchors)
+                    similarity = matched / len(stable_anchors)
 
-            # Count consecutive low similarity frames
-            lowCount = lowCount + 1 if similarity < similarityThreshold else 0
+                # Count consecutive low similarity frames
+                lowCount = lowCount + 1 if similarity < similarityThreshold else 0
 
-            # Start a new segment if screen changes
-            if lowCount >= maxLow:
-                currentSegment["endTime"] = ts
-                attachProofFrame(currentSegment, frames_dir)
-                segments.append(currentSegment)
-                currentSegment = startSegment(ts, frameIndex)
-                lowCount = 0
-            else:
-                currentSegment["endTime"] = ts
-                currentSegment["frames"].append(frameIndex)
+                # Start a new segment if screen changes
+                if lowCount >= maxLow:
+                    currentSegment["endTime"] = ts
+                    attachProofFrame(currentSegment, frames_dir)
+                    segments.append(currentSegment)
+                    currentSegment = startSegment(ts, frameIndex)
+                    lowCount = 0
+                else:
+                    currentSegment["endTime"] = ts
+                    currentSegment["frames"].append(frameIndex)
 
-            # Collect structured signals
-            for amt in extract_amounts(norm_text):
-                currentSegment["amounts"][amt] += 1
+                # Collect structured signals
+                for amt in extract_amounts(norm_text):
+                    currentSegment["amounts"][amt] += 1
 
-            for p in extract_counterparties(norm_text):
-                currentSegment["counterparties"][p] += 1
+                for p in extract_counterparties(norm_text):
+                    currentSegment["counterparties"][p] += 1
 
-            for a in frameAnchors:
-                currentSegment["anchor_freq"][a] = (
-                    currentSegment["anchor_freq"].get(a, 0) + 1
+                for a in frameAnchors:
+                    currentSegment["anchor_freq"][a] = (
+                        currentSegment["anchor_freq"].get(a, 0) + 1
+                    )
+
+                # Aggregate text content
+                currentSegment["tokens"].update(tokens)
+                currentSegment["ocr_text"] += " " + norm_text
+                currentSegment["frame_texts"].append(norm_text)
+
+                # Collect per-frame OCR output in memory (flushed after loop)
+                ocr_lines.append(f"FRAME {frameIndex}\n")
+                ocr_lines.append(f"TIME {ts:.3f} seconds\n")
+                if norm_text.strip():
+                    ocr_lines.append("OCR TEXT\n")
+                    ocr_lines.append(norm_text)
+                ocr_lines.append("\n\n")
+
+                # Save extracted frame image at reduced quality (debug only)
+                Image.fromarray(rgb).save(
+                    os.path.join(
+                        frames_dir,
+                        f"frame{frameIndex}.jpg"
+                    ),
+                    quality=75
                 )
 
-            # Aggregate text content
-            currentSegment["tokens"].update(tokens)
-            currentSegment["ocr_text"] += " " + norm_text
-            currentSegment["frame_texts"].append(norm_text)
+                logging.info(
+                    f"Frame {frameIndex} at {ts:.2f}s | similarity={similarity:.2f} | lowCount={lowCount}"
+                )
 
-            # Collect per-frame OCR output in memory (flushed after loop)
-            ocr_lines.append(f"FRAME {frameIndex}\n")
-            ocr_lines.append(f"TIME {ts:.3f} seconds\n")
-            if norm_text.strip():
-                ocr_lines.append("OCR TEXT\n")
-                ocr_lines.append(norm_text)
-            ocr_lines.append("\n\n")
-
-            # Save extracted frame image at reduced quality (debug only)
-            Image.fromarray(rgb).save(
-                os.path.join(
-                    frames_dir,
-                    f"frame{frameIndex}.jpg"
-                ),
-                quality=75
-            )
-
-            logging.info(
-                f"Frame {frameIndex} at {ts:.2f}s | similarity={similarity:.2f} | lowCount={lowCount}"
-            )
-
-            frameIndex += 1
+                frameIndex += 1
+    except Exception as e:
+        logging.error(f"Video extraction aborted mid-way due to error: {e}. Saving partial results...")
 
     # Flush all OCR lines to disk in a single write
     with open(
@@ -610,6 +654,11 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_cal
     if currentSegment:
         attachProofFrame(currentSegment, frames_dir)
         segments.append(currentSegment)
+
+    # Convert sets to lists before saving
+    for seg in segments:
+        for cat in seg.get("categorized_hits", {}):
+            seg["categorized_hits"][cat] = list(seg["categorized_hits"][cat])
 
     writeSegments(segments,output_dir)
 

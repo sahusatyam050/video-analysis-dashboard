@@ -303,7 +303,7 @@ def attribute_transactions(segments, segment_verdicts, rules):
                 "evidence": explanations[i]
             })
 
-    return betting_scores, results
+    return betting_scores, results, explanations
 
 
 # -------------------- ENTRY POINT --------------------
@@ -326,7 +326,7 @@ def run_betting_analysis(
     with open(rules_path, "r", encoding="utf-8") as f:
         rules = json.load(f)
 
-    scores, attributions = attribute_transactions(
+    scores, attributions, explanations = attribute_transactions(
         segments, verdicts, rules
     )
 
@@ -343,5 +343,12 @@ def run_betting_analysis(
         encoding="utf-8"
     ) as f:
         json.dump(attributions, f, indent=2)
+
+    with open(
+        f"{output_dir}/betting_segment_evidence.json",
+        "w",
+        encoding="utf-8"
+    ) as f:
+        json.dump(explanations, f, indent=2)
 
     return attributions

@@ -60,13 +60,13 @@ export default function DashboardView() {
 
   if (!taskId) {
     return (
-      <div className="flex flex-col items-center justify-center h-[70vh] text-center">
-        <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6">
-          <Video className="w-10 h-10 text-slate-300" />
+      <div className="flex flex-col items-center justify-center h-[75vh] text-center animate-in fade-in zoom-in duration-500">
+        <div className="w-24 h-24 bg-gradient-to-tr from-slate-100 to-slate-50 rounded-full shadow-sm border border-slate-200 flex items-center justify-center mb-8">
+          <Video className="w-10 h-10 text-slate-400" strokeWidth={1.5} />
         </div>
-        <h2 className="text-2xl font-bold text-slate-800">No Analysis Selected</h2>
-        <p className="text-slate-500 mt-2 max-w-md">
-          Upload a new video from the sidebar or select a previous analysis to view the dashboard.
+        <h2 className="text-2xl font-[800] text-slate-800 tracking-tight">No Analysis Selected</h2>
+        <p className="text-slate-500 mt-3 max-w-md text-sm leading-relaxed">
+          Upload a new video from the sidebar or input a URL to launch the autonomous bot. Your forensic dashboard will automatically generate upon completion.
         </p>
       </div>
     );

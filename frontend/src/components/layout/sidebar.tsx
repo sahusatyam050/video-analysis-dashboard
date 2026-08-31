@@ -19,6 +19,7 @@ import {
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 interface AnalysisTask {
   id: string;
@@ -90,7 +91,7 @@ export function Sidebar() {
       
     } catch (err) {
       console.error("Upload failed", err);
-      alert("Video upload failed. Please try again.");
+      toast.error("Video upload failed. Please try again.");
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) {
@@ -100,7 +101,7 @@ export function Sidebar() {
   };
   const handleCrawlStart = async () => {
     if (!crawlUrl) {
-      alert("Please enter a URL to crawl.");
+      toast.error("Please enter a URL to crawl.");
       return;
     }
     setIsCrawling(true);
@@ -117,7 +118,7 @@ export function Sidebar() {
       router.push(`/?task=${taskId}`);
     } catch (err) {
       console.error("Crawl failed", err);
-      alert("Autonomous crawl failed. Please try again or check the backend logs.");
+      toast.error("Autonomous crawl failed. Please try again or check the backend logs.");
       setIsCrawling(false);
       setUploadProgress(0);
     }

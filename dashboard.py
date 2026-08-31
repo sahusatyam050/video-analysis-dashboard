@@ -16,6 +16,7 @@ from pathlib import Path
 from fpdf import FPDF
 import io
 from collections import Counter
+import pandas as pd
 
 st.set_page_config(
     page_title="Video Analysis Dashboard",
@@ -354,10 +355,10 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["Upload Video", "Crawl URL"])
+    tab1, tab2 = st.tabs(["📁 Upload Video", "🌐 Crawl URL"])
     
     with tab1:
-        uploaded_file = st.file_uploader("Analyze a new video", type=["mp4", "mov", "avi", "webm"], label_visibility="collapsed")
+        uploaded_file = st.file_uploader("Select Video to Analyze", type=["mp4", "mov", "avi", "webm"])
         if uploaded_file is not None:
             if st.button("Start Analysis", type="primary", use_container_width=True, key="btn_upload"):
                 with st.status("Analyzing Video...", expanded=True) as status:
@@ -369,7 +370,7 @@ with st.sidebar:
                         
                         # Upload to API
                         files = {'file': (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                        resp = requests.post("http://localhost:8000/analyze", files=files)
+                        resp = requests.post("http://10.244.1.33:8000/analyze", files=files)
                         resp.raise_for_status()
                         task_id = resp.json()["task_id"]
                         
@@ -377,7 +378,7 @@ with st.sidebar:
                         
                         # Poll for status
                         while True:
-                            status_resp = requests.get(f"http://localhost:8000/status/{task_id}")
+                            status_resp = requests.get(f"http://10.244.1.33:8000/status/{task_id}")
                             if status_resp.status_code == 200:
                                 data = status_resp.json()
                                 progress = data.get("progress", 0.0)
@@ -402,7 +403,7 @@ with st.sidebar:
                         st.error(f"Error during analysis: {e}\n\n{err_msg}")
 
     with tab2:
-        crawl_url = st.text_input("Website URL", placeholder="https://example-betting.com", label_visibility="collapsed")
+        crawl_url = st.text_input("Target Website URL", placeholder="https://example-betting.com")
         crawl_duration = st.slider("Crawl Duration (seconds)", min_value=10, max_value=120, value=30)
         
         if crawl_url:
@@ -416,7 +417,7 @@ with st.sidebar:
                         
                         # Send to Crawl API
                         payload = {"url": crawl_url, "duration": crawl_duration}
-                        resp = requests.post("http://localhost:8000/crawl", json=payload)
+                        resp = requests.post("http://10.244.1.33:8000/crawl", json=payload)
                         resp.raise_for_status()
                         task_id = resp.json()["task_id"]
                         
@@ -424,7 +425,7 @@ with st.sidebar:
                         
                         # Poll for status
                         while True:
-                            status_resp = requests.get(f"http://localhost:8000/status/{task_id}")
+                            status_resp = requests.get(f"http://10.244.1.33:8000/status/{task_id}")
                             if status_resp.status_code == 200:
                                 data = status_resp.json()
                                 progress = data.get("progress", 0.0)
@@ -451,25 +452,34 @@ with st.sidebar:
     
     # Check existing outputs via API
     try:
-        analyses_resp = requests.get("http://localhost:8000/analyses")
+        analyses_resp = requests.get("http://10.244.1.33:8000/analyses_detailed")
         if analyses_resp.status_code == 200:
-            existing_outputs = analyses_resp.json()
+            detailed = analyses_resp.json()
+            # Filter to only show complete tasks
+            existing_outputs = [d for d in detailed if d.get("status") == "complete" or d.get("status") == "completed"]
         else:
             existing_outputs = []
     except Exception:
         existing_outputs = []
     
     if "output_dir" not in st.session_state:
-        st.session_state.output_dir = cli_dir or (existing_outputs[0] if existing_outputs else "")
+        st.session_state.output_dir = cli_dir or (existing_outputs[0]["id"] if existing_outputs else "")
         
-    options = existing_outputs
+    options = [d["id"] for d in existing_outputs]
     if cli_dir and cli_dir not in options:
         options.append(cli_dir)
+
+    def format_task(task_id):
+        for d in existing_outputs:
+            if d["id"] == task_id:
+                return d["video_name"]
+        return task_id
 
     selected_output = st.selectbox(
         "Previous Analyses", 
         options=options,
         index=0 if options else None,
+        format_func=format_task,
         label_visibility="collapsed"
     )
     
@@ -479,7 +489,23 @@ with st.sidebar:
 
 output_dir = st.session_state.get("output_dir", "")
 if not output_dir:
-    st.info("👈 Please upload a video to analyze or select an existing output directory from the sidebar.")
+    st.markdown("""
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60vh; text-align: center; animation: fadeIn 0.5s ease-in-out;">
+        <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        </style>
+        <div style="background: var(--secondary-background-color); border: 1px solid var(--secondary-background-color); border-radius: 50%; width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+            <span style="font-size: 40px; opacity: 0.8;">🎬</span>
+        </div>
+        <h2 style="font-family: Inter, sans-serif; font-weight: 800; color: var(--text-color); margin-bottom: 12px; font-size: 28px; letter-spacing: -0.5px;">No Analysis Selected</h2>
+        <p style="font-family: Inter, sans-serif; color: var(--text-color); opacity: 0.7; max-width: 450px; line-height: 1.6; font-size: 15px;">
+            Upload a new video from the sidebar or input a URL to launch the autonomous bot. Your forensic dashboard will automatically generate upon completion.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
     st.stop()
 
 output_path = Path(output_dir)
@@ -487,7 +513,7 @@ output_path = Path(output_dir)
 # ─────────────────────────── LOAD DATA ─────────────────────────────
 summary_data = {}
 try:
-    summary_resp = requests.get(f"http://localhost:8000/analyses/{output_dir}/summary")
+    summary_resp = requests.get(f"http://10.244.1.33:8000/analyses/{output_dir}/summary")
     if summary_resp.status_code == 200:
         summary_data = summary_resp.json()
 except Exception:
@@ -502,7 +528,7 @@ report     = summary_data.get("final_verdict_report_txt", "")
 metadata   = summary_data.get("metadata", {})
 original_filename = summary_data.get("original_filename", "Unknown Video")
 
-frames_dir_url = f"http://localhost:8000/outputs/{output_dir}/frames"
+frames_dir_url = f"http://10.244.1.33:8000/outputs/{output_dir}/frames"
 
 if not verdicts:
     st.error(f"No `segment_verdicts.json` found for `{output_dir}` from API. Check the analysis.")
@@ -546,6 +572,20 @@ betting_pct     = round(len(betting_nonzero) / len(bet_scores) * 100, 1) if bet_
 max_bet_score   = max(bet_scores) if bet_scores else 0
 avg_bet_score   = round(sum(betting_nonzero) / len(betting_nonzero), 1) if betting_nonzero else 0
 
+# Extract Keyword Evidence
+banking_hits = metadata.get("aggregated_banking_hits", [])
+crypto_hits = metadata.get("aggregated_crypto_hits", [])
+
+betting_evidence = metadata.get("betting_evidence", [])
+betting_hits_set = set()
+if betting_evidence:
+    for ev in betting_evidence:
+        if not ev or "suppressed" in ev: continue
+        for key in ["brands", "betting_phrases", "wallet_phrases", "fantasy_ui", "casino", "sportsbook_ui", "promo"]:
+            for hit in ev.get(key, []):
+                betting_hits_set.add(str(hit))
+betting_hits = sorted(list(betting_hits_set))
+
 # ─────────────────────────── HEADER ────────────────────────────────
 st.markdown(f"""
 <div style='display:flex;align-items:baseline;gap:14px;margin-bottom:4px;'>
@@ -579,54 +619,101 @@ with tabs[0]:
 
     # ── KPI Row with custom HTML cards ──
     metrics_html = f"""
-    <div style="display:grid; grid-template-columns:repeat(6, 1fr); gap:16px; margin-bottom:24px; font-family:Inter,sans-serif;">
-        <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <span style="font-size:12px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.5px;">Segments</span>
-                <span style="color:#94A3B8;">▶</span>
+    <style>
+    .metric-grid {{
+        display: grid; 
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); 
+        gap: 16px; 
+        margin-bottom: 24px; 
+        font-family: Inter, sans-serif;
+    }}
+    .metric-card {{
+        background: var(--background-color); 
+        border: 1px solid var(--secondary-background-color); 
+        border-radius: 12px; 
+        padding: 16px; 
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        color: var(--text-color);
+    }}
+    .metric-card-dark {{
+        background: var(--text-color); 
+        border: 1px solid var(--text-color); 
+        border-radius: 12px; 
+        padding: 16px; 
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        color: var(--background-color);
+    }}
+    .metric-header {{
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        margin-bottom: 8px;
+        font-size: 12px; 
+        font-weight: 600; 
+        text-transform: uppercase; 
+        letter-spacing: 0.5px;
+        opacity: 0.8;
+    }}
+    .metric-value {{
+        font-family: 'JetBrains Mono', monospace; 
+        font-size: 28px; 
+        font-weight: 700; 
+    }}
+    .metric-sub {{
+        font-size: 11px; 
+        font-weight: 500; 
+        margin-top: 4px;
+        opacity: 0.7;
+    }}
+    </style>
+    <div class="metric-grid">
+        <div class="metric-card">
+            <div class="metric-header">
+                <span>Segments</span>
+                <span>▶</span>
             </div>
-            <div style="font-family:JetBrains Mono,monospace; font-size:28px; font-weight:700; color:#1E293B;">{segment_count}</div>
-            <div style="font-size:11px; font-weight:500; color:#64748B; margin-top:4px;">{total_duration:.1f}s video</div>
+            <div class="metric-value">{segment_count}</div>
+            <div class="metric-sub">{total_duration:.1f}s video</div>
         </div>
-        <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <span style="font-size:12px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.5px;">QR Detected</span>
-                <span style="color:#94A3B8;">⬛</span>
+        <div class="metric-card">
+            <div class="metric-header">
+                <span>QR Detected</span>
+                <span>⬛</span>
             </div>
-            <div style="font-family:JetBrains Mono,monospace; font-size:28px; font-weight:700; color:#1E293B;">{len(qr_segments)}</div>
-            <div style="font-size:11px; font-weight:500; color:#64748B; margin-top:4px;">{len(qr_segments)} events</div>
+            <div class="metric-value">{len(qr_segments)}</div>
+            <div class="metric-sub">{len(qr_segments)} events</div>
         </div>
-        <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <span style="font-size:12px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.5px;">Banking Segs</span>
-                <span style="color:#94A3B8;">🏦</span>
+        <div class="metric-card">
+            <div class="metric-header">
+                <span>Banking Segs</span>
+                <span>🏦</span>
             </div>
-            <div style="font-family:JetBrains Mono,monospace; font-size:28px; font-weight:700; color:#1E293B;">{len(banking_segs)}</div>
-            <div style="font-size:11px; font-weight:500; color:#64748B; margin-top:4px;">{(len(banking_segs)/segment_count*100) if segment_count else 0:.0f}% coverage</div>
+            <div class="metric-value">{len(banking_segs)}</div>
+            <div class="metric-sub">{(len(banking_segs)/segment_count*100) if segment_count else 0:.0f}% coverage</div>
         </div>
-        <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <span style="font-size:12px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.5px;">Crypto Segs</span>
-                <span style="color:#94A3B8;">₿</span>
+        <div class="metric-card">
+            <div class="metric-header">
+                <span>Crypto Segs</span>
+                <span>₿</span>
             </div>
-            <div style="font-family:JetBrains Mono,monospace; font-size:28px; font-weight:700; color:#1E293B;">{len(crypto_segs)}</div>
-            <div style="font-size:11px; font-weight:500; color:#64748B; margin-top:4px;">{(len(crypto_segs)/segment_count*100) if segment_count else 0:.0f}% coverage</div>
+            <div class="metric-value">{len(crypto_segs)}</div>
+            <div class="metric-sub">{(len(crypto_segs)/segment_count*100) if segment_count else 0:.0f}% coverage</div>
         </div>
-        <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <span style="font-size:12px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.5px;">Betting Cov</span>
-                <span style="color:#94A3B8;">🎯</span>
+        <div class="metric-card">
+            <div class="metric-header">
+                <span>Betting Cov</span>
+                <span>🎯</span>
             </div>
-            <div style="font-family:JetBrains Mono,monospace; font-size:28px; font-weight:700; color:#1E293B;">{betting_pct}%</div>
-            <div style="font-size:11px; font-weight:500; color:#64748B; margin-top:4px;">{len(betting_nonzero)} segments</div>
+            <div class="metric-value">{betting_pct}%</div>
+            <div class="metric-sub">{len(betting_nonzero)} segments</div>
         </div>
-        <div style="background:{'#1E293B' if failed_tx_times else '#FFF'}; border:1px solid {'#1E293B' if failed_tx_times else '#E2E8F0'}; border-radius:12px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <span style="font-size:12px; font-weight:600; color:{'#94A3B8' if failed_tx_times else '#64748B'}; text-transform:uppercase; letter-spacing:0.5px;">Failed Tx</span>
-                <span style="color:{'#94A3B8' if failed_tx_times else '#94A3B8'};">🛑</span>
+        <div class="{'metric-card-dark' if failed_tx_times else 'metric-card'}">
+            <div class="metric-header">
+                <span>Failed Tx</span>
+                <span>🛑</span>
             </div>
-            <div style="font-family:JetBrains Mono,monospace; font-size:28px; font-weight:700; color:{'#FFF' if failed_tx_times else '#1E293B'};">{len(failed_tx_times)}</div>
-            <div style="font-size:11px; font-weight:500; color:{'#94A3B8' if failed_tx_times else '#64748B'}; margin-top:4px;">unconfirmed attempts</div>
+            <div class="metric-value">{len(failed_tx_times)}</div>
+            <div class="metric-sub">unconfirmed attempts</div>
         </div>
     </div>
     """
@@ -637,13 +724,13 @@ with tabs[0]:
     with col_a:
         st.markdown('<div class="section-header" style="display:flex; align-items:center; gap:8px;"><span>🎯</span> Executive Summary</div>', unsafe_allow_html=True)
         
-        exec_html = '<div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; font-family:Inter,sans-serif;">'
+        exec_html = '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:12px; font-family:Inter,sans-serif;">'
         
         def exec_card(label, value):
             return (
-                '<div style="background:#F8FAFC; border:1px solid #F1F5F9; border-radius:8px; padding:12px; display:flex; flex-direction:column;">'
-                f'<span style="font-size:11px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">{label}</span>'
-                f'<span style="font-family:JetBrains Mono,monospace; font-size:14px; font-weight:700; color:#1E293B;">{value}</span>'
+                '<div style="background:var(--secondary-background-color); border:1px solid var(--secondary-background-color); border-radius:8px; padding:12px; display:flex; flex-direction:column; color:var(--text-color);">'
+                f'<span style="font-size:11px; font-weight:600; opacity:0.7; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">{label}</span>'
+                f'<span style="font-family:\'JetBrains Mono\',monospace; font-size:14px; font-weight:700;">{value}</span>'
                 '</div>'
             )
             
@@ -659,25 +746,44 @@ with tabs[0]:
         exec_html += exec_card("Video Duration", f"{total_duration:.1f}s")
         
         exec_html += '</div>'
+        
+        # Add keywords section
+        if banking_hits or crypto_hits or betting_hits:
+            exec_html += '<div style="margin-top:16px; background:var(--background-color); border:1px solid var(--secondary-background-color); border-radius:8px; padding:12px;">'
+            exec_html += '<div style="font-size:12px; font-weight:600; opacity:0.8; margin-bottom:8px; color:var(--text-color);">DISCOVERED KEYWORD EVIDENCE</div>'
+            exec_html += '<div style="display:flex; flex-wrap:wrap; gap:6px;">'
+            
+            def badge(word, color, bg):
+                return f'<span style="background:{bg}; color:{color}; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700; font-family:\'JetBrains Mono\',monospace; border:1px solid {color}40;">{word}</span>'
+                
+            for word in banking_hits:
+                exec_html += badge(word, "#0891B2", "#CFFAFE")
+            for word in crypto_hits:
+                exec_html += badge(word, "#7C3AED", "#EDE9FE")
+            for word in betting_hits:
+                exec_html += badge(word, "#D97706", "#FEF3C7")
+                
+            exec_html += '</div></div>'
+            
         st.markdown(exec_html, unsafe_allow_html=True)
 
     with col_b:
         st.markdown('<div class="section-header" style="display:flex; align-items:center; gap:8px;"><span>🛡️</span> Signal Coverage</div>', unsafe_allow_html=True)
         
-        sig_html = '<div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:20px; box-shadow:0 1px 2px rgba(0,0,0,0.05); font-family:Inter,sans-serif; display:flex; flex-direction:column; gap:20px;">'
+        sig_html = '<div style="background:var(--background-color); border:1px solid var(--secondary-background-color); border-radius:12px; padding:20px; box-shadow:0 1px 2px rgba(0,0,0,0.05); font-family:Inter,sans-serif; display:flex; flex-direction:column; gap:20px; color:var(--text-color);">'
         
         def sig_bar(label, count, total, color):
             pct = (count / total * 100) if total else 0
             return (
                 '<div>'
                 '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">'
-                f'<span style="font-size:14px; font-weight:600; color:#334155;">{label}</span>'
+                f'<span style="font-size:14px; font-weight:600;">{label}</span>'
                 '<div style="display:flex; align-items:center; gap:8px;">'
-                f'<span style="font-size:12px; color:#64748B;">{count} / {total}</span>'
-                f'<span style="font-family:JetBrains Mono,monospace; font-size:12px; font-weight:700; color:#334155; background:#F1F5F9; padding:2px 6px; border-radius:4px;">{pct:.1f}%</span>'
+                f'<span style="font-size:12px; opacity:0.7;">{count} / {total}</span>'
+                f'<span style="font-family:JetBrains Mono,monospace; font-size:12px; font-weight:700; background:var(--secondary-background-color); padding:2px 6px; border-radius:4px;">{pct:.1f}%</span>'
                 '</div>'
                 '</div>'
-                '<div style="width:100%; height:10px; background:#F1F5F9; border-radius:5px; overflow:hidden;">'
+                '<div style="width:100%; height:10px; background:var(--secondary-background-color); border-radius:5px; overflow:hidden;">'
                 f'<div style="width:{pct}%; height:100%; background:{color}; border-radius:5px;"></div>'
                 '</div>'
                 '</div>'
@@ -692,6 +798,23 @@ with tabs[0]:
         
         sig_html += '</div>'
         st.markdown(sig_html, unsafe_allow_html=True)
+
+    # ── Signal Area Chart ──
+    st.markdown('<div class="section-header" style="display:flex; align-items:center; gap:8px;"><span>📈</span> Signal Strength Over Time</div>', unsafe_allow_html=True)
+    st.markdown("""<div style='font-family:Inter,sans-serif;font-size:0.79rem;opacity:0.7;margin-bottom:12px;'>
+    Continuous tracking of banking, crypto, and transaction intent across the video duration.
+    </div>""", unsafe_allow_html=True)
+    
+    if verdicts:
+        df = pd.DataFrame([{
+            'Time (s)': v.get('start_time', 0),
+            'Banking': v.get('banking_context', 0),
+            'Crypto': v.get('crypto_context', 0),
+            'Tx Likely': v.get('transaction_likely', 0)
+        } for v in verdicts])
+        df.set_index('Time (s)', inplace=True)
+        st.area_chart(df, color=["#0891B2", "#7C3AED", "#DC2626"], use_container_width=True)
+
     # ── Timeline hero (full width) ──
     st.markdown('<div class="section-header">Video Event Timeline — Full Duration Overview</div>', unsafe_allow_html=True)
     st.markdown("""<div style='font-family:Inter,sans-serif;font-size:0.79rem;color:#64748B;margin-bottom:12px;'>
@@ -1575,7 +1698,7 @@ with tabs[4]:
     st.markdown('<div class="section-header" style="margin-top:20px;">Segment Frames & Evidence</div>', unsafe_allow_html=True)
     proof_frame_path = seg.get("proof_frame")
     if proof_frame_path:
-        img_url = f"http://localhost:8000/{proof_frame_path}"
+        img_url = f"http://10.244.1.33:8000/{proof_frame_path}"
         st.image(
             img_url,
             caption="Proof Frame (Annotated)",
@@ -1585,24 +1708,67 @@ with tabs[4]:
         # Keyword Categories Display
         colors_hex = {
             "Financial": "#00C800", "Gaming": "#0078FF", "Rewards": "#FFD700",
-            "Authentication": "#E60000", "Legal": "#B432B4", "Social": "#00BEFF", "Payment": "#FF0000"
+            "Authentication": "#E60000", "Legal": "#B432B4", "Social": "#00BEFF", "Payment_Indicator": "#FF0000"
         }
         
-        detected_cats = get_detected_categories(seg.get("ocr_text", ""))
+        detected_cats = seg.get("categorized_hits", {})
         if detected_cats:
+            st.markdown('<div class="section-header" style="margin-top:20px; font-size:0.9rem;">Bounding Box Evidence Legend</div>', unsafe_allow_html=True)
             cat_html = "<div style='display:flex;flex-wrap:wrap;gap:10px;margin-bottom:15px;'>"
+            
+            top_evidence_words = []
+            
             for cat, keywords in detected_cats.items():
-                kw_str = ", ".join(set(keywords))
+                if not keywords:
+                    continue
+                kw_str = ", ".join(keywords)
+                top_evidence_words.extend(keywords[:2]) # Take up to 2 from each cat for summary
                 color = colors_hex.get(cat, "#333")
+                display_cat = "Payment" if cat == "Payment_Indicator" else cat
                 cat_html += f"""
                 <div style='background:#F8FAFC;border:1px solid #E2E8F0;border-left:4px solid {color};
                 border-radius:6px;padding:8px 12px;'>
-                  <div style='font-family:Inter,sans-serif;font-size:0.75rem;font-weight:700;color:#1E293B;margin-bottom:2px;'>{cat}</div>
+                  <div style='font-family:Inter,sans-serif;font-size:0.75rem;font-weight:700;color:#1E293B;margin-bottom:2px;'>{display_cat}</div>
                   <div style='font-family:JetBrains Mono,monospace;font-size:0.7rem;color:#64748B;'>{kw_str}</div>
                 </div>
                 """
             cat_html += "</div>"
             st.markdown(cat_html, unsafe_allow_html=True)
+            
+            # --- Generate Segment Summary ---
+            st.markdown('<div class="section-header" style="margin-top:20px; font-size:0.9rem;">Segment Context Summary</div>', unsafe_allow_html=True)
+            
+            bet_score = bet_scores[st.session_state.seg_idx_sel] if st.session_state.seg_idx_sel < len(bet_scores) else 0
+            bank_score = seg.get("banking_context", 0) or 0
+            
+            summary_sentences = []
+            if bet_score > 70:
+                summary_sentences.append(f"This segment exhibits a **high Betting confidence ({bet_score:.1f}/100)**.")
+            elif bet_score > 30:
+                summary_sentences.append(f"This segment shows **moderate Betting relevance ({bet_score:.1f}/100)**.")
+            
+            if bank_score > 50:
+                summary_sentences.append(f"It also contains a **strong Banking context ({bank_score:.1f}%)**.")
+            elif seg.get("qr_detected"):
+                summary_sentences.append(f"A **QR Code** (likely payment-related) was detected on screen.")
+                
+            if top_evidence_words:
+                unique_top = list(set(top_evidence_words))[:5]
+                evidence_str = "', '".join(unique_top)
+                summary_sentences.append(f"OpenCV identified critical visual evidence on screen including **'{evidence_str}'**.")
+                
+            if not summary_sentences:
+                summary_sentences.append("This segment contains general UI navigation with minimal financial or betting context.")
+                
+            summary_text = " ".join(summary_sentences)
+            
+            st.markdown(f"""
+            <div style='background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:16px;margin-bottom:20px;'>
+              <div style='font-family:Inter,sans-serif;font-size:0.9rem;color:#166534;line-height:1.5;'>
+                {summary_text}
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         # Downloads Row
         dl_col1, dl_col2 = st.columns(2)

@@ -69,6 +69,21 @@ def process_video_background(task_id: int, file_path: str):
         metadata_dict["final_summary"] = load_json_safe("final_summary.json")
         metadata_dict["betting_transaction_attribution"] = load_json_safe("betting_transaction_attribution.json")
         metadata_dict["final_summary_txt"] = load_text_safe("final_summary.txt")
+        metadata_dict["betting_evidence"] = load_json_safe("betting_segment_evidence.json")
+
+        segments_data = load_json_safe("segment_verdicts.json") or []
+        
+        # Aggregate keyword hits across all segments to avoid DB schema changes
+        all_banking_hits = set()
+        all_crypto_hits = set()
+        for seg in segments_data:
+            for hit in seg.get("banking_hits", []):
+                all_banking_hits.add(hit)
+            for hit in seg.get("crypto_hits", []):
+                all_crypto_hits.add(hit)
+                
+        metadata_dict["aggregated_banking_hits"] = list(all_banking_hits)
+        metadata_dict["aggregated_crypto_hits"] = list(all_crypto_hits)
 
         # 1. Create AnalysisSummary
         summary = AnalysisSummary(
@@ -81,7 +96,6 @@ def process_video_background(task_id: int, file_path: str):
         db.add(summary)
         
         # 2. Create VideoSegments
-        segments_data = load_json_safe("segment_verdicts.json")
         if segments_data:
             for seg in segments_data:
                 db_seg = VideoSegment(

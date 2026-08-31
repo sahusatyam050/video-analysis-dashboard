@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import ReactECharts from "echarts-for-react";
-import { Film, QrCode, Building, Bitcoin, Target, XOctagon, CheckCircle2, ShieldAlert, Timer } from "lucide-react";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Film, QrCode, Building, Bitcoin, Target, XOctagon, CheckCircle2, ShieldAlert, Timer, Activity } from "lucide-react";
 
 export function OverviewTab({ metrics, summaryData }: { metrics: any, summaryData: any }) {
   if (!metrics) return null;
@@ -110,6 +111,43 @@ export function OverviewTab({ metrics, summaryData }: { metrics: any, summaryDat
             <SignalBar label="Betting Coverage" count={metrics.bettingNonZero.length} total={metrics.betScores.length || 1} color="bg-[#F59E0B]" />
             <SignalBar label="Failed Tx" count={metrics.failedTxTimes.length} total={Math.max(metrics.failedTxRecords?.length || 1, 1)} color="bg-[#991B1B]" />
           </div>
+        </div>
+      </div>
+
+      <div>
+        <div className="section-header flex items-center gap-2"><Activity className="w-4 h-4 text-slate-400" /> Signal Strength Over Time</div>
+        <div className="text-[0.79rem] text-[#64748B] mb-3">
+          Continuous tracking of banking, crypto, and transaction intent across the video duration.
+        </div>
+        <div className="border border-slate-200 rounded-lg bg-white p-4 h-[300px] shadow-sm">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={metrics.verdicts.map((v: any) => ({ time: parseFloat(v.start_time.toFixed(1)), banking: v.banking_context || 0, crypto: v.crypto_context || 0, transaction: v.transaction_likely || 0 }))} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <defs>
+                <linearGradient id="colorBanking" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#0891B2" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#0891B2" stopOpacity={0}/>
+                </linearGradient>
+                <linearGradient id="colorCrypto" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#7C3AED" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#7C3AED" stopOpacity={0}/>
+                </linearGradient>
+                <linearGradient id="colorTx" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#DC2626" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#DC2626" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="time" tick={{ fontSize: 11, fill: '#64748B' }} tickFormatter={(val) => `${val}s`} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+              <Tooltip 
+                contentStyle={{ borderRadius: '8px', border: '1px solid #E2E8F0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }}
+                labelFormatter={(val) => `Time: ${val}s`}
+              />
+              <Area type="monotone" dataKey="banking" name="Banking" stroke="#0891B2" strokeWidth={2} fillOpacity={1} fill="url(#colorBanking)" />
+              <Area type="monotone" dataKey="crypto" name="Crypto" stroke="#7C3AED" strokeWidth={2} fillOpacity={1} fill="url(#colorCrypto)" />
+              <Area type="monotone" dataKey="transaction" name="Tx Likely" stroke="#DC2626" strokeWidth={2} fillOpacity={1} fill="url(#colorTx)" />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
       </div>
 

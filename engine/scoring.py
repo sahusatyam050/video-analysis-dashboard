@@ -92,13 +92,13 @@ def compute_context_confidence(text, terms, cap=88.0, context_type="generic"):
     (banking / crypto) based on keyword density and diversity.
     """
     if not text:
-        return 0.0
+        return 0.0, []
 
     hits = [t for t in terms if t in text]
     total_hits = len(hits)
 
     if total_hits == 0:
-        return 0.0
+        return 0.0, []
 
     diversity = len(set(hits))
     base = 1 - pow(0.88, total_hits)
@@ -119,7 +119,7 @@ def compute_context_confidence(text, terms, cap=88.0, context_type="generic"):
     if total_hits >= 10 and diversity >= 6:
         score += 12
 
-    return round(min(score, cap), 1)
+    return round(min(score, cap), 1), list(set(hits))
 
 
 # ============================================================
@@ -344,7 +344,9 @@ def write_segment_verdicts(segments, segment_scores, output_dir="outputs"):
             "end_time": seg.get("endTime"),
             "qr_detected": bool(seg.get("qrTexts")),
             "banking_context": score["bankingContextPercentage"],
+            "banking_hits": score.get("bankingHits", []),
             "crypto_context": score["cryptoContextPercentage"],
+            "crypto_hits": score.get("cryptoHits", []),
             "transaction_likely": score["transactionLikelyPercentage"],
             "transaction_executed": score["transactionExecutedPercentage"],
             "transaction_failed": score.get("transactionFailed", False),
@@ -375,24 +377,29 @@ def score_segment(segment, rules):
     # QR-based fast path
     for qr in qr_texts:
         if qr.lower().startswith("upi://"):
+            b_conf, b_hits = compute_context_confidence(
+                text, roles["financial_context"], cap=88.0, context_type="banking"
+            )
+            c_conf, c_hits = compute_context_confidence(
+                text, roles["crypto_context"], cap=85.0, context_type="crypto"
+            )
             return {
-                "bankingContextPercentage": compute_context_confidence(
-                    text, roles["financial_context"], cap=88.0, context_type="banking"
-                ),
-                "cryptoContextPercentage": compute_context_confidence(
-                    text, roles["crypto_context"], cap=85.0, context_type="crypto"
-                ),
+                "bankingContextPercentage": b_conf,
+                "bankingHits": b_hits,
+                "cryptoContextPercentage": c_conf,
+                "cryptoHits": c_hits,
                 "transactionLikelyPercentage": compute_transaction_likelihood(
                     text, roles, qr_texts
                 ),
-                "transactionExecutedPercentage": 0.0
+                "transactionExecutedPercentage": 0.0,
+                "categorized_hits": segment.get("categorized_hits", {})
             }
 
-    banking_conf = compute_context_confidence(
+    banking_conf, banking_hits = compute_context_confidence(
         text, roles["financial_context"], cap=88.0, context_type="banking"
     )
 
-    crypto_conf = compute_context_confidence(
+    crypto_conf, crypto_hits = compute_context_confidence(
         text, roles["crypto_context"], cap=85.0, context_type="crypto"
     )
 
@@ -408,8 +415,11 @@ def score_segment(segment, rules):
 
     return {
         "bankingContextPercentage": banking_conf,
+        "bankingHits": banking_hits,
         "cryptoContextPercentage": crypto_conf,
+        "cryptoHits": crypto_hits,
         "transactionLikelyPercentage": transaction_likely,
         "transactionExecutedPercentage": transaction_executed,
-        "transactionFailed": failure_detected
+        "transactionFailed": failure_detected,
+        "categorized_hits": segment.get("categorized_hits", {})
     }
