@@ -16,6 +16,9 @@ from pydantic import BaseModel
 from crawler import crawl_and_record
 import shutil
 from urllib.parse import urlparse
+import asyncio
+
+CRAWLER_STATES = {}  # task_id -> {"status": "running" | "waiting_for_otp", "otp_code": None, "event": asyncio.Event()}
 
 app = FastAPI(title="Video Intel Dashboard API")
 
@@ -166,20 +169,11 @@ async def start_crawl_analysis(
     """
     Crawls a URL autonomously, records the screen as a video, and processes it.
     """
-    # 1. Run the crawler synchronously here (since we need the file path) or asynchronously.
-    # The endpoint is async, so we can await it directly.
-    try:
-        video_path = await crawl_and_record(req.url, duration=req.duration)
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"Crawler failed: {str(e)}"})
-
-    # Extract domain for cleaner filenames
     parsed_url = urlparse(req.url)
     domain = parsed_url.netloc.replace("www.", "") or "unknown_domain"
-    # Clean domain to avoid filesystem issues
     clean_domain = "".join(c for c in domain if c.isalnum() or c in ".-_")
     
-    # 2. Create DB Task with the new domain filename
+    # 1. Create DB Task immediately
     new_task = VideoTask(
         original_filename=f"{clean_domain}.webm",
         status="processing",
@@ -188,19 +182,61 @@ async def start_crawl_analysis(
     db.add(new_task)
     db.commit()
     db.refresh(new_task)
-
-    # 3. Move the video to uploads using the domain name
-    dest_path = f"uploads/{new_task.id}_{clean_domain}.webm"
-    shutil.move(video_path, dest_path)
     
-    # 4. Update the DB task with the final destination filename
-    new_task.original_filename = os.path.basename(dest_path)
-    db.commit()
+    # Initialize crawler state
+    CRAWLER_STATES[new_task.id] = {
+        "status": "running",
+        "otp_code": None,
+        "event": asyncio.Event()
+    }
 
-    # 5. Start Background Analysis
-    background_tasks.add_task(process_video_background, new_task.id, dest_path)
+    # 2. Define background sequence
+    async def run_crawl_sequence(task_id: int, url: str, duration: int, clean_domain: str):
+        async def request_otp_from_user():
+            if task_id in CRAWLER_STATES:
+                CRAWLER_STATES[task_id]["status"] = "waiting_for_otp"
+                await CRAWLER_STATES[task_id]["event"].wait()
+                otp = CRAWLER_STATES[task_id]["otp_code"]
+                CRAWLER_STATES[task_id]["event"].clear() # Reset for next time if needed
+                return otp
+            return None
 
-    return {"task_id": new_task.id, "message": "Crawling finished, analysis started"}
+        try:
+            # Pass task_id so crawler can update state if needed
+            video_path = await crawl_and_record(url, duration=duration, task_id=task_id, otp_callback=request_otp_from_user)
+            
+            dest_path = f"uploads/{task_id}_{clean_domain}.webm"
+            shutil.move(video_path, dest_path)
+            
+            # Update DB with final filename
+            db_session = SessionLocal()
+            task = db_session.query(VideoTask).filter(VideoTask.id == task_id).first()
+            if task:
+                task.original_filename = os.path.basename(dest_path)
+                db_session.commit()
+            db_session.close()
+
+            # Clean up crawler state
+            CRAWLER_STATES.pop(task_id, None)
+
+            # 3. Start Video Processing Background Task
+            process_video_background(task_id, dest_path)
+            
+        except Exception as e:
+            db_session = SessionLocal()
+            task = db_session.query(VideoTask).filter(VideoTask.id == task_id).first()
+            if task:
+                task.status = "error"
+                task.error_message = f"Crawler failed: {str(e)}"
+                db_session.commit()
+            db_session.close()
+            CRAWLER_STATES.pop(task_id, None)
+
+    # Launch sequence
+    background_tasks.add_task(run_crawl_sequence, new_task.id, req.url, req.duration, clean_domain)
+
+    return {"task_id": str(new_task.id), "message": "Crawling started in background"}
+
 
 
 @app.get("/status/{task_id}")
@@ -215,13 +251,28 @@ def get_status(task_id: str, db: Session = Depends(get_db)):
     if not task:
         return JSONResponse(status_code=404, content={"detail": "Task not found"})
         
+    crawler_state = CRAWLER_STATES.get(task_id_int, {})
+        
     return {
         "status": task.status,
+        "crawler_state": crawler_state.get("status"),
         "progress": task.progress,
         "original_filename": task.original_filename,
         "error_message": task.error_message,
         "processing_time_seconds": task.processing_time_seconds
     }
+
+class OTPRequest(BaseModel):
+    otp: str
+
+@app.post("/submit_otp/{task_id}")
+def submit_otp(task_id: int, req: OTPRequest):
+    if task_id in CRAWLER_STATES:
+        CRAWLER_STATES[task_id]["otp_code"] = req.otp
+        CRAWLER_STATES[task_id]["status"] = "running"
+        CRAWLER_STATES[task_id]["event"].set()
+        return {"success": True}
+    return JSONResponse(status_code=404, content={"detail": "Crawler not waiting for OTP or not found"})
 
 
 @app.get("/analyses")

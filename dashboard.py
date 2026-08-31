@@ -403,49 +403,76 @@ with st.sidebar:
                         st.error(f"Error during analysis: {e}\n\n{err_msg}")
 
     with tab2:
-        crawl_url = st.text_input("Target Website URL", placeholder="https://example-betting.com")
-        crawl_duration = st.slider("Crawl Duration (seconds)", min_value=10, max_value=120, value=30)
-        
-        if crawl_url:
-            if st.button("Start Autonomous Crawl", type="primary", use_container_width=True, key="btn_crawl"):
-                with st.status("Deploying Autonomous Bot...", expanded=True) as status:
-                    st.write(f"Crawling {crawl_url} and recording screen...")
-                    progress_bar = st.progress(0.0, text="Initializing browser...")
-                    
+        if "active_crawl_task" not in st.session_state:
+            crawl_url = st.text_input("Target Website URL", placeholder="https://example-betting.com")
+            crawl_duration = st.slider("Crawl Duration (seconds)", min_value=10, max_value=120, value=30)
+            
+            if crawl_url:
+                if st.button("Start Autonomous Crawl", type="primary", use_container_width=True, key="btn_crawl"):
                     try:
-                        start_time = time.time()
-                        
-                        # Send to Crawl API
                         payload = {"url": crawl_url, "duration": crawl_duration}
                         resp = requests.post("http://127.0.0.1:8000/crawl", json=payload)
                         resp.raise_for_status()
                         task_id = resp.json()["task_id"]
-                        
-                        st.write("Crawl complete. Extracting frames and identifying signals...")
-                        
-                        # Poll for status
-                        while True:
-                            status_resp = requests.get(f"http://127.0.0.1:8000/status/{task_id}")
-                            if status_resp.status_code == 200:
-                                data = status_resp.json()
-                                progress = data.get("progress", 0.0)
-                                progress_bar.progress(progress, text=f"Processing: {int(progress * 100)}%")
-                                
-                                if data.get("status") == "complete":
-                                    break
-                                elif data.get("status") == "error":
-                                    raise Exception(data.get("error_message", "Unknown error in backend"))
-                            
-                            time.sleep(1.0)
-                        
-                        st.session_state.output_dir = task_id
-                        status.update(label="Crawl & Analysis Complete!", state="complete", expanded=False)
+                        st.session_state.active_crawl_task = task_id
                         st.rerun()
                     except Exception as e:
-                        import traceback
-                        err_msg = traceback.format_exc()
-                        status.update(label="Crawl Failed", state="error", expanded=True)
-                        st.error(f"Error during crawl: {e}\n\n{err_msg}")
+                        st.error(f"Error starting crawl: {e}")
+        else:
+            task_id = st.session_state.active_crawl_task
+            st.markdown(f"**Active Task ID:** `{task_id}`")
+            
+            try:
+                status_resp = requests.get(f"http://127.0.0.1:8000/status/{task_id}")
+                if status_resp.status_code == 200:
+                    data = status_resp.json()
+                    status = data.get("status")
+                    crawler_state = data.get("crawler_state")
+                    progress = data.get("progress", 0.0)
+                    
+                    if status == "error":
+                        st.error(f"Error during crawl/analysis: {data.get('error_message')}")
+                        if st.button("Clear & Restart", type="secondary"):
+                            del st.session_state.active_crawl_task
+                            st.rerun()
+                    elif status == "complete":
+                        st.success("Crawl & Analysis Complete!")
+                        st.session_state.output_dir = str(task_id)
+                        del st.session_state.active_crawl_task
+                        
+                        if st.button("View Report", type="primary"):
+                            st.rerun()
+                    else:
+                        if crawler_state == "waiting_for_otp":
+                            st.warning("⚠️ **Crawler Paused: OTP / Captcha Required!**")
+                            with st.form("otp_form"):
+                                otp_val = st.text_input("Enter the OTP sent to the registered mobile/email")
+                                submitted = st.form_submit_button("Submit OTP")
+                                if submitted:
+                                    if otp_val:
+                                        requests.post(f"http://127.0.0.1:8000/submit_otp/{task_id}", json={"otp": otp_val})
+                                        st.success("OTP Submitted! Resuming...")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("Please enter a valid OTP.")
+                        else:
+                            st.info("🤖 **Bot is navigating the site and recording evidence...**")
+                            progress_bar = st.progress(progress, text=f"Processing: {int(progress * 100)}%")
+                            
+                            # Polling logic via rerun
+                            time.sleep(2)
+                            st.rerun()
+                else:
+                    st.error("Failed to connect to backend API.")
+                    if st.button("Clear"):
+                        del st.session_state.active_crawl_task
+                        st.rerun()
+            except Exception as e:
+                st.error(f"Error checking status: {e}")
+                if st.button("Clear"):
+                    del st.session_state.active_crawl_task
+                    st.rerun()
 
     st.markdown("<hr style='margin:1.5rem 0; border-color:#E2E8F0;'>", unsafe_allow_html=True)
     st.markdown("#### Select Existing Analysis")
@@ -528,7 +555,7 @@ report     = summary_data.get("final_verdict_report_txt", "")
 metadata   = summary_data.get("metadata", {})
 original_filename = summary_data.get("original_filename", "Unknown Video")
 
-frames_dir_url = f"http://10.244.1.33:8000/outputs/{output_dir}/frames"
+frames_dir_url = f"http://127.0.0.1:8000/outputs/{output_dir}/frames"
 
 if not verdicts:
     st.error(f"No `segment_verdicts.json` found for `{output_dir}` from API. Check the analysis.")
@@ -1698,7 +1725,7 @@ with tabs[4]:
     st.markdown('<div class="section-header" style="margin-top:20px;">Segment Frames & Evidence</div>', unsafe_allow_html=True)
     proof_frame_path = seg.get("proof_frame")
     if proof_frame_path:
-        img_url = f"http://10.244.1.33:8000/{proof_frame_path}"
+        img_url = f"http://127.0.0.1:8000/{proof_frame_path}"
         st.image(
             img_url,
             caption="Proof Frame (Annotated)",
