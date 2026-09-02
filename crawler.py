@@ -26,8 +26,17 @@ def get_seed_credentials(target_url):
             if target_domain == db_domain or target_domain in db_domain or db_domain in target_domain:
                 otp_val = str(row.get("OTP (Y/N)", "")).strip().lower()
                 otp_req = otp_val in ["yes", "y", "true"]
+                
+                # Prioritize Mobile > Email > Username, and completely ignore 'N/A' strings
+                def get_valid(val):
+                    return val if val and str(val).strip().upper() != "N/A" else None
+                    
+                username = get_valid(row.get("Mobile Number")) or \
+                           get_valid(row.get("E-mail ID")) or \
+                           get_valid(row.get("Username"))
+                           
                 return {
-                    "username": row.get("Username") or row.get("Mobile Number") or row.get("E-mail ID"),
+                    "username": username,
                     "password": row.get("Password"),
                     "otp_required": otp_req
                 }
@@ -90,15 +99,18 @@ async def phase_1_authentication(page: Page, creds: dict, otp_callback=None, sta
         # Fill credentials
         # Find username/mobile input
         user_selectors = [
-            'input[placeholder*="ser" i]',
             'input[placeholder*="obile" i]',
             'input[placeholder*="hone" i]',
+            'input[placeholder*="umber" i]',
+            'input[placeholder*="ser" i]',
             'input[placeholder*="ccount" i]',
-            'input[type="text"]',
             'input[type="tel"]',
+            'input[type="number"]',
+            'input[type="text"]',
             'input[type="email"]',
-            'input[name*="user" i]',
             'input[name*="mobile" i]',
+            'input[name*="phone" i]',
+            'input[name*="user" i]',
             'input' # fallback to first input
         ]
         
@@ -327,19 +339,15 @@ async def crawl_and_record(url: str, duration: int = 60, output_dir: str = "temp
         # --- PHASE 4: Financial Gateway ---
         await phase_4_financial_execution(page, state_callback)
         
-        # Wait for remaining duration
-        elapsed = time.time() - start_time
-        remaining = duration - elapsed
-        if remaining > 0:
-            if state_callback:
-                state_callback("current_phase", "finalizing")
-            logging.info(f"Waiting for remaining {remaining:.1f}s to ensure video captures everything...")
+        # Wait a fixed 5 seconds to ensure final evidence (like QR codes) fully renders
+        if state_callback:
+            state_callback("current_phase", "finalizing")
             
-            steps = int(remaining)
-            for i in range(steps):
-                if state_callback:
-                    state_callback("progress", i / steps)
-                await page.wait_for_timeout(1000)
+        logging.info("Crawler finished all phases. Waiting 5s for final page render before stopping recording...")
+        for i in range(5):
+            if state_callback:
+                state_callback("progress", i / 5.0)
+            await page.wait_for_timeout(1000)
         
         if state_callback:
             state_callback("progress", 1.0)

@@ -156,21 +156,63 @@ def generate_segment_summary(
     # ── Priority 1: Check Local LM Studio Vision Server ──
     if image_path and os.path.exists(image_path):
         # Local models like LLaVA 1.5 perform better with very simple, direct instructions
+        # Determine screen type from signals to guide the LLM opening line
+        if "utr" in tx_str.lower() or "credited" in tx_str.lower() or "reference id" in tx_str.lower():
+            screen_type = "This payment confirmation screen shows"
+        elif "deposit" in tx_str.lower() or "upi" in tx_str.lower() or "bank" in tx_str.lower():
+            screen_type = "This deposit gateway screen shows"
+        elif "withdraw" in tx_str.lower():
+            screen_type = "This withdrawal screen shows"
+        elif "my bets" in bet_str.lower() or "odds" in bet_str.lower():
+            screen_type = "This active betting slip / sportsbook screen shows"
+        elif "casino" in bet_str.lower() or "slots" in bet_str.lower():
+            screen_type = "This casino lobby screen shows"
+        elif "login" in ocr_text.lower() or "sign in" in ocr_text.lower() or "register" in ocr_text.lower():
+            screen_type = "This login / registration screen shows"
+        elif "bonus" in bet_str.lower() or "welcome" in bet_str.lower() or "promo" in bet_str.lower():
+            screen_type = "This promotional / affiliate marketing screen shows"
+        elif qr_detected:
+            screen_type = "This QR code payment gateway screen shows"
+        else:
+            screen_type = "This gambling platform screen shows"
+
         local_prompt = (
-            f"[OCR BACKGROUND CONTEXT]: {ocr_text[:300]}\n"
-            f"[BETTING SIGNALS MATCHED]: {bet_str}\n"
-            f"[TRANSACTION SIGNALS MATCHED]: {tx_str}\n\n"
-            "[INSTRUCTION]: You are a forensic analyst. Write a 4-5 line summary combining the visual context of this screenshot with the matched keywords. Assume it is a betting, casino, or financial site. Identify the website name, describe modals, and categorize the content."
+            f"[OCR CONTEXT]: {ocr_text[:400]}\n"
+            f"[BETTING SIGNALS]: {bet_str}\n"
+            f"[TRANSACTION SIGNALS]: {tx_str}\n"
+            f"[QR CODE DETECTED]: {'Yes' if qr_detected else 'No'}\n\n"
+            f"[INSTRUCTION]: You are a senior forensic investigator building a legal evidence report on an illegal online betting and financial crime case. "
+            f"Write exactly 3-4 sentences. "
+            f"You MUST start your response with: '{screen_type}' "
+            f"Then identify the platform name if visible, describe the specific financial or betting activity shown, "
+            f"and state why this screenshot constitutes forensic evidence of illegal activity. "
+            f"Focus ONLY on: account numbers, UPI IDs, bank names, UTR numbers, QR codes, deposit/withdrawal amounts, betting markets, and brand names. "
+            f"Do NOT describe colors, layouts, or button designs. Do NOT use generic phrases like 'easy navigation'."
         )
         lm_raw_text = call_lm_studio_vision(image_path, local_prompt, LM_STUDIO_URL)
         if lm_raw_text:
-            return (
-                "**Extracted Keywords**\n\n"
-                f"* **Betting Signals:** {bet_str}\n"
-                f"* **Transaction Signals:** {tx_str}\n\n"
-                "**Screenshot Summary**\n"
-                f"{lm_raw_text}"
-            )
+            # ── Hallucination Validator ──
+            # Reject if the LLM went completely off-topic
+            hallucination_triggers = [
+                "pokemon", "netflix", "collage", "video game", 
+                "man's hand", "man holding", "popular game", "entertainment",
+                "anime", "movie", "cartoon", "youtube", "social media",
+                "instagram", "twitter", "facebook"
+            ]
+            lm_lower = lm_raw_text.lower()
+            is_hallucination = any(t in lm_lower for t in hallucination_triggers)
+            
+            if not is_hallucination:
+                return (
+                    "**Extracted Keywords**\n\n"
+                    f"* **Betting Signals:** {bet_str}\n"
+                    f"* **Transaction Signals:** {tx_str}\n\n"
+                    "**Screenshot Summary**\n"
+                    f"{lm_raw_text}"
+                )
+            else:
+                logger.warning(f"LLM summary rejected (hallucination={is_hallucination}). Falling back to rule-based summary.")
+                # Fall through to rule-based summary below
 
 
 

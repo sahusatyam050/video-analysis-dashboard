@@ -204,14 +204,8 @@ def create_pdf_report(seg, img_path):
     pdf.cell(95, 8, txt=f"Transaction Executed: {txex}%", ln=True)
     pdf.ln(10)
     
-    pdf.set_font("helvetica", size=12, style="B")
-    pdf.cell(190, 10, txt="Extracted Raw OCR Text", ln=True)
-    pdf.set_font("helvetica", size=9)
-    # Ensure latin-1 compatibility for FPDF default fonts
-    ocr_text = seg.get("ocr_text", "No text detected.")
-    safe_ocr = str(ocr_text).encode("latin-1", "replace").decode("latin-1")
-    pdf.multi_cell(0, 5, txt=safe_ocr)
     
+
     return bytes(pdf.output())
 
 def create_master_pdf_report(verdicts):
@@ -254,13 +248,6 @@ def create_master_pdf_report(verdicts):
         pdf.multi_cell(0, 5, txt=safe_summary)
         pdf.ln(10)
         
-        pdf.set_font("helvetica", size=12, style="B")
-        pdf.cell(190, 10, txt="Extracted Raw OCR Text", ln=True)
-        pdf.set_font("helvetica", size=9)
-        ocr_text = seg.get("ocr_text", "No text detected.")
-        safe_ocr = str(ocr_text).encode("latin-1", "replace").decode("latin-1")
-        pdf.multi_cell(0, 5, txt=safe_ocr)
-        
     return bytes(pdf.output())
 
 def create_master_json_report(verdicts):
@@ -276,8 +263,6 @@ def create_master_html_report(verdicts):
             import markdown
             md_html = markdown.markdown(seg["ai_summary"])
             html += f"<h3>AI Summary</h3>{md_html}"
-        if seg.get("ocr_text"):
-            html += f"<h3>OCR Text</h3><pre>{seg['ocr_text']}</pre>"
     html += "</body></html>"
     return html.encode('utf-8')
 
@@ -304,9 +289,6 @@ def create_master_docx_report(verdicts):
         doc.add_heading("AI Forensic Summary", level=2)
         summary_text = seg.get("ai_summary", "No AI Summary Generated.")
         doc.add_paragraph(summary_text.replace("**", ""))
-        
-        doc.add_heading("Extracted Raw OCR Text", level=2)
-        doc.add_paragraph(seg.get("ocr_text", "No text detected."))
         
     doc_io = io.BytesIO()
     doc.save(doc_io)
@@ -520,6 +502,9 @@ if not output_dir:
     else:
         task_id = st.session_state.active_crawl_task
         status_placeholder = st.empty()
+        # Track start time for elapsed counter
+        if "crawl_start_time" not in st.session_state:
+            st.session_state.crawl_start_time = time.time()
         
         while True:
             try:
@@ -529,17 +514,23 @@ if not output_dir:
                     status = data.get("status")
                     crawler_state = data.get("crawler_state")
                     current_phase = data.get("current_phase", "init")
+                    elapsed = int(time.time() - st.session_state.get("crawl_start_time", time.time()))
+                    elapsed_str = f"{elapsed // 60}m {elapsed % 60}s"
                     
                     if status == "error":
                         with status_placeholder.container():
                             st.error(f"🚨 Error: {data.get('error_message')}")
                             if st.button("Clear & Restart"):
                                 del st.session_state.active_crawl_task
+                                if "crawl_start_time" in st.session_state:
+                                    del st.session_state.crawl_start_time
                                 st.rerun()
                         break
                     elif status == "complete":
                         st.session_state.output_dir = str(task_id)
                         del st.session_state.active_crawl_task
+                        if "crawl_start_time" in st.session_state:
+                            del st.session_state.crawl_start_time
                         st.rerun()
                     else:
                         with status_placeholder.container():
@@ -555,48 +546,131 @@ if not output_dir:
                                         st.rerun()
                                 break # Exit the loop if waiting for user input
                             else:
-                                st.markdown("### 🤖 Live Agent Telemetry")
+                                # ── PIPELINE STATE LOGIC ──
+                                is_crawling = (crawler_state is not None)
                                 
-                                # Live Checklist Logic
-                                phases = {
-                                    "init": 0, "auth": 1, "context": 2, "affiliate": 3, "financial": 4, "finalizing": 5
-                                }
-                                if status == "processing":
-                                    current_idx = 6 # All crawler phases done
+                                # ── PHASE INDEX ──
+                                phase_order = ["init", "auth", "context", "affiliate", "financial", "finalizing"]
+                                current_idx = phase_order.index(current_phase) if is_crawling and current_phase in phase_order else 6
+
+                                # ── OVERALL PIPELINE PROGRESS ──
+                                if not is_crawling:
+                                    ocr_progress = data.get("progress", 0.0)
+                                    # Crawl = 0-50%, OCR/LLM = 50-100%
+                                    overall = 0.50 + (ocr_progress * 0.50)
                                 else:
-                                    current_idx = phases.get(current_phase, 0)
-                                
-                                def get_icon(idx):
-                                    if current_idx > idx: return "✅"
-                                    if current_idx == idx: return "⏳"
-                                    return "⭕"
-                                    
-                                st.markdown(f"**{get_icon(1)} Phase 1:** Bypassing Security & Authenticating")
-                                st.markdown(f"**{get_icon(2)} Phase 2:** Mapping Contextual Intelligence & Behaviors")
-                                st.markdown(f"**{get_icon(3)} Phase 3:** Scanning Affiliate & Promotion Networks")
-                                st.markdown(f"**{get_icon(4)} Phase 4:** Exposing Financial Gateways & Triggering QR Codes")
-                                st.markdown(f"**{get_icon(5)} Phase 5:** Finalizing Evidence Video")
-                                
-                                if status == "processing":
-                                    st.markdown(f"**⏳ Phase 6:** Extracting Frames & AI Signal Detection")
-                                
-                                st.markdown("---")
-                                if status == "processing":
-                                    progress = data.get("progress", 0.0)
-                                    if progress < 0.70:
-                                        st.progress(progress, text=f"Analyzing Video Evidence: {int(progress * 100)}%")
-                                        st.caption("🔍 **Live Activity:** OpenCV and Tesseract OCR are currently scrubbing the video, detecting QR codes, and mapping UI text.")
-                                    elif progress < 1.0:
-                                        st.progress(progress, text=f"🤖 Generating LLM Forensic Summaries... {int(progress * 100)}%")
-                                        st.caption("🤖 **Live Activity:** The local Vision LLM is now analyzing the top flagged segments and actively writing the forensic Markdown reports. (This takes ~10s per segment).")
+                                    overall = (current_idx / 6) * 0.50
+
+                                # ── HEADER: Title + Elapsed Timer ──
+                                st.markdown(f"""
+                                <div style='display:flex;justify-content:space-between;align-items:center;
+                                    margin-bottom:12px;'>
+                                    <span style='font-size:1.1rem;font-weight:700;color:#1E293B;'>
+                                        🤖 Forensic Agent — Live Telemetry
+                                    </span>
+                                    <span style='background:#F1F5F9;border:1px solid #CBD5E1;
+                                        border-radius:20px;padding:4px 14px;
+                                        font-family:JetBrains Mono,monospace;font-size:0.8rem;color:#475569;'>
+                                        ⏱️ Elapsed: {elapsed_str}
+                                    </span>
+                                </div>
+                                """, unsafe_allow_html=True)
+
+                                # ── PIPELINE PROGRESS BAR ──
+                                st.progress(overall, text=f"Overall Pipeline Progress: {int(overall * 100)}%")
+                                st.markdown("")
+
+                                # ── PHASE DEFINITIONS ──
+                                phase_defs = [
+                                    ("🌐", "Initialising Browser",    "Launching stealth Chromium browser and navigating to target URL"),
+                                    ("🔐", "Authentication",           "Injecting seed credentials and bypassing login security"),
+                                    ("🗺️", "Context Mapping",          "Exploring sports, casino, and game lobbies to establish gambling context"),
+                                    ("🤝", "Affiliate Scan",           "Scanning promotion, referral, and VIP networks for MLM evidence"),
+                                    ("💰", "Financial Gateway",        "Hunting for Deposit/UPI/QR Code payment gateways and capturing financial data"),
+                                    ("🎥", "Evidence Finalisation",    "Stopping recording and packaging the video evidence file"),
+                                ]
+
+                                # ── PHASE CHECKLIST ──
+                                for i, (icon, title, desc) in enumerate(phase_defs):
+                                    if current_idx > i:
+                                        badge_color = "#16A34A"; badge_bg = "#F0FDF4"; badge_text = "DONE"
+                                        title_color = "#15803D"
+                                    elif current_idx == i:
+                                        badge_color = "#D97706"; badge_bg = "#FFFBEB"; badge_text = "ACTIVE"
+                                        title_color = "#92400E"
                                     else:
-                                        st.progress(1.0, text="💾 Saving Evidence Reports & Finalizing Database...")
-                                        st.caption("💾 **Live Activity:** Generating final PDF/HTML reports and committing evidence to the local database.")
-                                elif current_phase == "finalizing":
-                                    progress = data.get("progress", 0.0)
-                                    st.progress(progress, text=f"Rendering Evidence: {int(progress * 100)}%")
+                                        badge_color = "#94A3B8"; badge_bg = "#F8FAFC"; badge_text = "PENDING"
+                                        title_color = "#94A3B8"
+
+                                    st.markdown(f"""
+                                    <div style='display:flex;align-items:flex-start;gap:12px;
+                                        padding:10px 14px;margin:4px 0;border-radius:8px;
+                                        background:{badge_bg};border:1px solid {badge_color}33;'>
+                                        <span style='font-size:1.1rem;margin-top:1px;'>{icon}</span>
+                                        <div style='flex:1;'>
+                                            <div style='display:flex;align-items:center;gap:8px;'>
+                                                <span style='font-weight:700;color:{title_color};font-size:0.88rem;'>{title}</span>
+                                                <span style='font-size:0.68rem;font-weight:700;color:{badge_color};
+                                                    background:white;border:1px solid {badge_color};
+                                                    border-radius:10px;padding:1px 8px;'>{badge_text}</span>
+                                            </div>
+                                            <div style='font-size:0.77rem;color:#64748B;margin-top:2px;'>{desc if current_idx == i else ("Completed ✓" if current_idx > i else "Waiting...")}</div>
+                                        </div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+
+                                # ── OCR / AI PHASE ──
+                                st.markdown("")
+                                if not is_crawling:
+                                    ocr_progress = data.get("progress", 0.0)
+                                    if ocr_progress < 0.70:
+                                        phase_label = "🔍 OCR & Frame Extraction"
+                                        phase_desc  = "OpenCV + Tesseract are scanning every video frame for QR codes, UPI IDs, bank names, and betting keywords"
+                                        pct_text    = f"Scanning frames: {int(ocr_progress * 100)}%"
+                                        badge_text2, badge_color2, badge_bg2 = "ACTIVE", "#D97706", "#FFFBEB"
+                                    elif ocr_progress < 1.0:
+                                        phase_label = "🤖 LLM Vision Analysis"
+                                        phase_desc  = "Local Vision AI is writing forensic summaries for each flagged segment (~10s per segment)"
+                                        pct_text    = f"Generating AI summaries: {int(ocr_progress * 100)}%"
+                                        badge_text2, badge_color2, badge_bg2 = "ACTIVE", "#D97706", "#FFFBEB"
+                                    else:
+                                        phase_label = "💾 Saving Evidence Reports"
+                                        phase_desc  = "Generating PDF, DOCX, HTML reports and committing all data to the evidence database"
+                                        pct_text    = "Finalising..."
+                                        badge_text2, badge_color2, badge_bg2 = "ACTIVE", "#D97706", "#FFFBEB"
+
+                                    st.markdown(f"""
+                                    <div style='display:flex;align-items:flex-start;gap:12px;
+                                        padding:10px 14px;margin:4px 0;border-radius:8px;
+                                        background:{badge_bg2};border:1px solid {badge_color2}33;'>
+                                        <span style='font-size:1.1rem;margin-top:1px;'>🧠</span>
+                                        <div style='flex:1;'>
+                                            <div style='display:flex;align-items:center;gap:8px;'>
+                                                <span style='font-weight:700;color:#92400E;font-size:0.88rem;'>{phase_label}</span>
+                                                <span style='font-size:0.68rem;font-weight:700;color:{badge_color2};
+                                                    background:white;border:1px solid {badge_color2};
+                                                    border-radius:10px;padding:1px 8px;'>{badge_text2}</span>
+                                            </div>
+                                            <div style='font-size:0.77rem;color:#64748B;margin-top:2px;'>{phase_desc}</div>
+                                        </div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                                    st.progress(ocr_progress, text=pct_text)
                                 else:
-                                    st.info("The agent is actively executing operations in the background. Please wait...")
+                                    st.markdown(f"""
+                                    <div style='display:flex;align-items:flex-start;gap:12px;
+                                        padding:10px 14px;margin:4px 0;border-radius:8px;
+                                        background:#F8FAFC;border:1px solid #CBD5E133;'>
+                                        <span style='font-size:1.1rem;margin-top:1px;'>🧠</span>
+                                        <div>
+                                            <span style='font-weight:700;color:#94A3B8;font-size:0.88rem;'>AI Analysis</span>
+                                            <span style='font-size:0.68rem;font-weight:700;color:#94A3B8;
+                                                background:white;border:1px solid #94A3B8;
+                                                border-radius:10px;padding:1px 8px;margin-left:8px;'>PENDING</span>
+                                            <div style='font-size:0.77rem;color:#94A3B8;margin-top:2px;'>Waiting for crawl to complete...</div>
+                                        </div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
                 
                 time.sleep(1.0)
             except Exception as e:
@@ -604,10 +678,13 @@ if not output_dir:
                     st.error(f"Error checking status: {e}")
                     if st.button("Clear"):
                         del st.session_state.active_crawl_task
+                        if "crawl_start_time" in st.session_state:
+                            del st.session_state.crawl_start_time
                         st.rerun()
                 break
                 
     st.stop()
+
 
 output_path = Path(output_dir)
 
