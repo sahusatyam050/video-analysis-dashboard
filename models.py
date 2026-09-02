@@ -24,6 +24,7 @@ class VideoTask(Base):
     progress = Column(Float, nullable=False, default=0.0)
     processing_time_seconds = Column(Float, nullable=True)
     error_message = Column(Text, nullable=True)
+    complaint_id = Column(String, index=True, nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
@@ -66,6 +67,7 @@ class VideoSegment(Base):
     transaction_likely = Column(Float, nullable=False, default=0.0)
     
     proof_frame_path = Column(String, nullable=True)
+    ai_summary = Column(Text, nullable=True)
 
     # Back-reference to the task
     task = relationship("VideoTask", back_populates="video_segments")

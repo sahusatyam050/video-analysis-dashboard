@@ -1,6 +1,7 @@
 import re
 import json
 import os
+import time
 from collections import Counter
 from difflib import SequenceMatcher
 
@@ -329,29 +330,70 @@ def apply_sentence_logic(base_likely, base_exec, frame_texts, sentence_rules, ro
 # Output writing
 # ============================================================
 
-def write_segment_verdicts(segments, segment_scores, output_dir="outputs"):
+from concurrent.futures import ThreadPoolExecutor
+from engine.llm_summary import generate_segment_summary
+
+def write_segment_verdicts(segments, segment_scores, output_dir="outputs", progress_callback=None):
     """
-    Writes per-segment verdicts into JSON file.
+    Writes per-segment verdicts into JSON file, including AI screenshot summaries generated in parallel.
     """
     os.makedirs(output_dir, exist_ok=True)
 
-    data = []
+    def process_single_segment(idx, seg, score):
+        proof_path = seg.get("proof_frame")
+        ocr_txt = seg.get("ocr_text", "")
+        qr_det = bool(seg.get("qrTexts"))
+        b_score = score.get("bankingContextPercentage", 0.0)
+        c_score = score.get("cryptoContextPercentage", 0.0)
+        bet_score = score.get("bettingContextPercentage", 0.0) if "bettingContextPercentage" in score else 0.0
 
-    for idx, (seg, score) in enumerate(zip(segments, segment_scores), start=1):
-        data.append({
+        ai_sum = generate_segment_summary(
+            image_path=proof_path,
+            ocr_text=ocr_txt,
+            qr_detected=qr_det,
+            banking_score=b_score,
+            crypto_score=c_score,
+            betting_score=bet_score,
+            timeout_seconds=12.0
+        )
+
+        return (idx, {
             "segment_index": idx,
             "start_time": seg.get("startTime"),
             "end_time": seg.get("endTime"),
-            "qr_detected": bool(seg.get("qrTexts")),
-            "banking_context": score["bankingContextPercentage"],
+            "qr_detected": qr_det,
+            "banking_context": b_score,
             "banking_hits": score.get("bankingHits", []),
-            "crypto_context": score["cryptoContextPercentage"],
+            "crypto_context": c_score,
             "crypto_hits": score.get("cryptoHits", []),
-            "transaction_likely": score["transactionLikelyPercentage"],
-            "transaction_executed": score["transactionExecutedPercentage"],
+            "transaction_likely": score.get("transactionLikelyPercentage", 0.0),
+            "transaction_executed": score.get("transactionExecutedPercentage", 0.0),
             "transaction_failed": score.get("transactionFailed", False),
-            "proof_frame": seg.get("proof_frame")
+            "proof_frame": proof_path,
+            "ai_summary": ai_sum
         })
+
+    # Execute segment AI summary tasks sequentially (max_workers=1) to prevent crashing local LM Studio
+    results_dict = {}
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        futures = []
+        for idx, (seg, score) in enumerate(zip(segments, segment_scores), start=1):
+            futures.append(executor.submit(process_single_segment, idx, seg, score))
+
+        total_futures = len(futures)
+        for i, future in enumerate(futures, start=1):
+            try:
+                idx, item = future.result()
+                results_dict[idx] = item
+                if progress_callback:
+                    # Map the LLM phase to the 70%-99% range of the overall task progress
+                    progress = 0.70 + (0.29 * (i / total_futures))
+                    progress_callback(min(0.99, progress))
+            except Exception as e:
+                pass
+
+    # Sort results in original segment index order
+    data = [results_dict[idx] for idx in sorted(results_dict.keys())]
 
     path = os.path.join(output_dir, "segment_verdicts.json")
     with open(path, "w", encoding="utf-8") as f:

@@ -3,6 +3,8 @@ import os
 import csv
 import logging
 import random
+import time
+import re
 from urllib.parse import urlparse
 from playwright.async_api import async_playwright, Page, TimeoutError
 from playwright_stealth import Stealth
@@ -54,9 +56,12 @@ async def close_popups(page: Page):
     except Exception as e:
         logging.info(f"Error while trying to close popups: {e}")
 
-async def phase_1_authentication(page: Page, creds: dict, otp_callback=None) -> bool:
+async def phase_1_authentication(page: Page, creds: dict, otp_callback=None, state_callback=None) -> bool:
     """Critical Phase: Attempt to log in using injected credentials."""
     logging.info("Phase 1: Starting Authentication...")
+    if state_callback:
+        state_callback("current_phase", "auth")
+        
     try:
         # Pre-login splash page check
         inputs_count = await page.locator("input").count()
@@ -148,10 +153,12 @@ async def phase_1_authentication(page: Page, creds: dict, otp_callback=None) -> 
         logging.warning(f"Phase 1 Authentication Failed: {e}")
         return False
         
-import re
-async def phase_2_context_exploration(page: Page):
-    """Non-Critical Phase: Scroll lobby and look for Gaming context."""
-    logging.info("Phase 2: Context Exploration (Gaming Lobby)...")
+async def phase_2_context_exploration(page: Page, state_callback=None):
+    """Non-Critical Phase: Click around randomly to build trust and capture game lobby."""
+    logging.info("Phase 2: Contextual Exploration...")
+    if state_callback:
+        state_callback("current_phase", "context")
+        
     await close_popups(page)
     try:
         # Scroll a bit
@@ -171,9 +178,12 @@ async def phase_2_context_exploration(page: Page):
     except Exception as e:
         logging.warning(f"Phase 2 skipped due to timeout/error: {e}")
 
-async def phase_3_affiliate_profile(page: Page):
+async def phase_3_affiliate_profile(page: Page, state_callback=None):
     """Non-Critical Phase: Look for Profile/Promotions for MLM evidence."""
     logging.info("Phase 3: Affiliate & Profile Evidence...")
+    if state_callback:
+        state_callback("current_phase", "affiliate")
+        
     await close_popups(page)
     try:
         promo_links = page.locator("a, button").filter(has_text=re.compile(r"(promotion|refer|invite|profile|vip|account)", re.IGNORECASE))
@@ -188,9 +198,12 @@ async def phase_3_affiliate_profile(page: Page):
     except Exception as e:
         logging.warning(f"Phase 3 skipped due to timeout/error: {e}")
 
-async def phase_4_financial_execution(page: Page):
+async def phase_4_financial_execution(page: Page, state_callback=None):
     """Critical Phase: Navigate to Deposit and trigger QR Code."""
     logging.info("Phase 4: Financial Execution (Hunting QR Codes)...")
+    if state_callback:
+        state_callback("current_phase", "financial")
+        
     await close_popups(page)
     try:
         deposit_locators = page.locator("a, button, [role='button'], span").filter(has_text=re.compile(r"(deposit|wallet|cashier|recharge|add money)", re.IGNORECASE))
@@ -264,13 +277,17 @@ async def phase_4_financial_execution(page: Page):
         logging.warning(f"Phase 4 Failed or Deposit button not found: {e}")
 
 
-async def crawl_and_record(url: str, duration: int = 60, output_dir: str = "temp_videos", task_id: int = None, otp_callback=None) -> str:
+async def crawl_and_record(url: str, duration: int = 60, output_dir: str = "temp_videos", task_id: int = None, otp_callback=None, state_callback=None) -> str:
     """
     Executes the 4-Phase Event-Driven Forensic Crawl.
     """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
+        
+    if state_callback:
+        state_callback("current_phase", "init")
 
+    start_time = time.time()
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
         context = await browser.new_context(
@@ -295,21 +312,37 @@ async def crawl_and_record(url: str, duration: int = 60, output_dir: str = "temp
         
         if creds:
             logging.info(f"Found Seed Credentials for {url}. Username: {creds['username']}, OTP Required: {creds['otp_required']}")
-            success = await phase_1_authentication(page, creds, otp_callback)
-            if not success:
-                logging.error("CRITICAL: Authentication failed. Aborting forensic crawl.")
-                await page.close()
-                video_path = await page.video.path()
-                await context.close()
-                await browser.close()
-                return video_path
+            auth_success = await phase_1_authentication(page, creds, otp_callback, state_callback)
+            if not auth_success:
+                logging.warning("Auth failed or timed out. Proceeding anyway.")
         else:
-            logging.info(f"No valid non-OTP credentials found for {url}. Proceeding as Guest.")
+            logging.warning("No credentials found for this domain. Proceeding unauthenticated.")
             
-        # Execute remaining phases sequentially
-        await phase_2_context_exploration(page)
-        await phase_3_affiliate_profile(page)
-        await phase_4_financial_execution(page)
+        # --- PHASE 2: Context ---
+        await phase_2_context_exploration(page, state_callback)
+        
+        # --- PHASE 3: Affiliate / Profile ---
+        await phase_3_affiliate_profile(page, state_callback)
+        
+        # --- PHASE 4: Financial Gateway ---
+        await phase_4_financial_execution(page, state_callback)
+        
+        # Wait for remaining duration
+        elapsed = time.time() - start_time
+        remaining = duration - elapsed
+        if remaining > 0:
+            if state_callback:
+                state_callback("current_phase", "finalizing")
+            logging.info(f"Waiting for remaining {remaining:.1f}s to ensure video captures everything...")
+            
+            steps = int(remaining)
+            for i in range(steps):
+                if state_callback:
+                    state_callback("progress", i / steps)
+                await page.wait_for_timeout(1000)
+        
+        if state_callback:
+            state_callback("progress", 1.0)
 
         # Final flush
         await page.close()

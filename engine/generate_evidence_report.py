@@ -75,7 +75,11 @@ def _img_cell(seg, styles):
 def _cap_cell(seg, styles):
     ts = _ts(seg)
     fn = _frame_no(_proof_path(seg))
-    return Paragraph((f"Frame {fn}<br/>" if fn else "") + ts, styles["Caption"])
+    ai_sum = seg.get("ai_summary", "")
+    text = (f"Frame {fn} ({ts})" if fn else ts)
+    if ai_sum:
+        text += f"<br/><b>AI Summary:</b> {ai_sum}"
+    return Paragraph(text, styles["Caption"])
 
 def _image_grid(segs, styles, per_row=IMAGES_PER_ROW):
     if not segs: return None

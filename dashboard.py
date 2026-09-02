@@ -63,7 +63,7 @@ st.markdown("""
     margin-top: 1.5rem !important;
     margin-bottom: 0.75rem !important;
 }
-[data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
+[data-testid="stSidebar"] p, [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown span {
     font-family: 'Inter', sans-serif !important;
 }
 
@@ -238,24 +238,20 @@ def create_master_pdf_report(verdicts):
         img_path = seg.get("proof_frame")
         if img_path and os.path.exists(img_path):
             pdf.image(img_path, x=10, y=30, w=190)
-            pdf.set_y(150)
+            pdf.set_y(140)
         else:
             pdf.cell(190, 10, txt="[No Image Available]", ln=True, align='C')
             pdf.ln(10)
             
         pdf.set_font("helvetica", size=12, style="B")
-        pdf.cell(190, 10, txt="Classification Metrics", ln=True)
+        pdf.cell(190, 10, txt="AI Forensic Summary", ln=True)
         pdf.set_font("helvetica", size=10)
         
-        bank = seg.get("banking_context", 0) or 0
-        cryp = seg.get("crypto_context", 0) or 0
-        txlk = seg.get("transaction_likely", 0) or 0
-        txex = seg.get("transaction_executed", 0) or 0
-        
-        pdf.cell(95, 8, txt=f"Banking Context: {bank}%", ln=False)
-        pdf.cell(95, 8, txt=f"Crypto Context: {cryp}%", ln=True)
-        pdf.cell(95, 8, txt=f"Transaction Likely: {txlk}%", ln=False)
-        pdf.cell(95, 8, txt=f"Transaction Executed: {txex}%", ln=True)
+        ai_summary = seg.get("ai_summary", "No AI Summary Generated.")
+        # Strip markdown asterisks for a cleaner PDF text output
+        clean_summary = ai_summary.replace("**", "")
+        safe_summary = str(clean_summary).encode("latin-1", "replace").decode("latin-1")
+        pdf.multi_cell(0, 5, txt=safe_summary)
         pdf.ln(10)
         
         pdf.set_font("helvetica", size=12, style="B")
@@ -266,6 +262,55 @@ def create_master_pdf_report(verdicts):
         pdf.multi_cell(0, 5, txt=safe_ocr)
         
     return bytes(pdf.output())
+
+def create_master_json_report(verdicts):
+    return json.dumps(verdicts, indent=2).encode('utf-8')
+
+def create_master_html_report(verdicts):
+    html = "<html><head><title>Master Evidence Report</title></head><body style='font-family:sans-serif;'>"
+    html += f"<h1>Master Evidence Report</h1><p>Segments: {len(verdicts)}</p>"
+    for seg in verdicts:
+        html += f"<hr><h2>Segment {seg['segment_index']}</h2>"
+        html += f"<p><b>Time:</b> {seg['start_time']}s - {seg['end_time']}s</p>"
+        if seg.get("ai_summary"):
+            import markdown
+            md_html = markdown.markdown(seg["ai_summary"])
+            html += f"<h3>AI Summary</h3>{md_html}"
+        if seg.get("ocr_text"):
+            html += f"<h3>OCR Text</h3><pre>{seg['ocr_text']}</pre>"
+    html += "</body></html>"
+    return html.encode('utf-8')
+
+def create_master_docx_report(verdicts):
+    import docx
+    from docx.shared import Inches
+    import io
+    
+    doc = docx.Document()
+    doc.add_heading("Master Evidence Report", 0)
+    doc.add_paragraph(f"Total Segments Analyzed: {len(verdicts)}")
+    
+    for seg in verdicts:
+        doc.add_heading(f"Segment {seg['segment_index']} Evidence", level=1)
+        doc.add_paragraph(f"Time: {seg['start_time']:.2f}s to {seg['end_time']:.2f}s")
+        
+        img_path = seg.get("proof_frame")
+        if img_path and os.path.exists(img_path):
+            try:
+                doc.add_picture(img_path, width=Inches(6.0))
+            except:
+                doc.add_paragraph("[Image processing error]")
+                
+        doc.add_heading("AI Forensic Summary", level=2)
+        summary_text = seg.get("ai_summary", "No AI Summary Generated.")
+        doc.add_paragraph(summary_text.replace("**", ""))
+        
+        doc.add_heading("Extracted Raw OCR Text", level=2)
+        doc.add_paragraph(seg.get("ocr_text", "No text detected."))
+        
+    doc_io = io.BytesIO()
+    doc.save(doc_io)
+    return doc_io.getvalue()
 
 CATEGORIZED_KEYWORDS = {
     "Financial": [
@@ -343,138 +388,26 @@ def get_output_dir():
 cli_dir = get_output_dir()
 
 with st.sidebar:
-    st.markdown("""
+    st.markdown('''
         <div style="display:flex; align-items:center; gap:12px; margin-bottom:24px; margin-top:-10px;">
             <div style="background:#0F172A; width:38px; height:38px; display:flex; align-items:center; justify-content:center; border-radius:10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <span style="font-size:18px;">🎬</span>
+                <span style="font-size:18px;">🤖</span>
             </div>
             <div style="display:flex; flex-direction:column; justify-content:center;">
-                <span style="font-family:Inter,sans-serif; font-size:17px; font-weight:800; color:#0F172A; line-height:1.2; letter-spacing:-0.03em;">Video Analysis</span>
-                <span style="font-family:Inter,sans-serif; font-size:11px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.05em; line-height:1.2; margin-top:2px;">Dashboard</span>
+                <span style="font-family:Inter,sans-serif; font-size:17px; font-weight:800; color:#0F172A; line-height:1.2; letter-spacing:-0.03em;">Command Center</span>
+                <span style="font-family:Inter,sans-serif; font-size:11px; font-weight:600; color:#64748B; text-transform:uppercase; letter-spacing:0.05em; line-height:1.2; margin-top:2px;">Crawler</span>
             </div>
         </div>
-    """, unsafe_allow_html=True)
+    ''', unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["📁 Upload Video", "🌐 Crawl URL"])
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("➕ New Analysis Task", use_container_width=True, type="primary"):
+        st.session_state.output_dir = ""
+        if "active_crawl_task" in st.session_state:
+            del st.session_state.active_crawl_task
+        st.rerun()
+    st.markdown("<hr style='margin:1rem 0; border-color:#E2E8F0;'>", unsafe_allow_html=True)
     
-    with tab1:
-        uploaded_file = st.file_uploader("Select Video to Analyze", type=["mp4", "mov", "avi", "webm"])
-        if uploaded_file is not None:
-            if st.button("Start Analysis", type="primary", use_container_width=True, key="btn_upload"):
-                with st.status("Analyzing Video...", expanded=True) as status:
-                    st.write("Uploading and starting analysis...")
-                    progress_bar = st.progress(0.0, text="Processing: 0%")
-                    
-                    try:
-                        start_time = time.time()
-                        
-                        # Upload to API
-                        files = {'file': (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                        resp = requests.post("http://127.0.0.1:8000/analyze", files=files)
-                        resp.raise_for_status()
-                        task_id = resp.json()["task_id"]
-                        
-                        st.write("Extracting frames and identifying signals...")
-                        
-                        # Poll for status
-                        while True:
-                            status_resp = requests.get(f"http://127.0.0.1:8000/status/{task_id}")
-                            if status_resp.status_code == 200:
-                                data = status_resp.json()
-                                progress = data.get("progress", 0.0)
-                                progress_bar.progress(progress, text=f"Processing: {int(progress * 100)}%")
-                                
-                                if data.get("status") == "complete":
-                                    break
-                                elif data.get("status") == "error":
-                                    raise Exception(data.get("error_message", "Unknown error in backend"))
-                            
-                            time.sleep(1.0)
-                        
-                        elapsed = time.time() - start_time
-                        st.session_state.output_dir = task_id  # Use task_id as the analysis identifier
-                        
-                        status.update(label="Analysis Complete!", state="complete", expanded=False)
-                        st.rerun()
-                    except Exception as e:
-                        import traceback
-                        err_msg = traceback.format_exc()
-                        status.update(label="Analysis Failed", state="error", expanded=True)
-                        st.error(f"Error during analysis: {e}\n\n{err_msg}")
-
-    with tab2:
-        if "active_crawl_task" not in st.session_state:
-            crawl_url = st.text_input("Target Website URL", placeholder="https://example-betting.com")
-            crawl_duration = st.slider("Crawl Duration (seconds)", min_value=10, max_value=120, value=30)
-            
-            if crawl_url:
-                if st.button("Start Autonomous Crawl", type="primary", use_container_width=True, key="btn_crawl"):
-                    try:
-                        payload = {"url": crawl_url, "duration": crawl_duration}
-                        resp = requests.post("http://127.0.0.1:8000/crawl", json=payload)
-                        resp.raise_for_status()
-                        task_id = resp.json()["task_id"]
-                        st.session_state.active_crawl_task = task_id
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error starting crawl: {e}")
-        else:
-            task_id = st.session_state.active_crawl_task
-            st.markdown(f"**Active Task ID:** `{task_id}`")
-            
-            try:
-                status_resp = requests.get(f"http://127.0.0.1:8000/status/{task_id}")
-                if status_resp.status_code == 200:
-                    data = status_resp.json()
-                    status = data.get("status")
-                    crawler_state = data.get("crawler_state")
-                    progress = data.get("progress", 0.0)
-                    
-                    if status == "error":
-                        st.error(f"Error during crawl/analysis: {data.get('error_message')}")
-                        if st.button("Clear & Restart", type="secondary"):
-                            del st.session_state.active_crawl_task
-                            st.rerun()
-                    elif status == "complete":
-                        st.success("Crawl & Analysis Complete!")
-                        st.session_state.output_dir = str(task_id)
-                        del st.session_state.active_crawl_task
-                        
-                        if st.button("View Report", type="primary"):
-                            st.rerun()
-                    else:
-                        if crawler_state == "waiting_for_otp":
-                            st.warning("⚠️ **Crawler Paused: OTP / Captcha Required!**")
-                            with st.form("otp_form"):
-                                otp_val = st.text_input("Enter the OTP sent to the registered mobile/email")
-                                submitted = st.form_submit_button("Submit OTP")
-                                if submitted:
-                                    if otp_val:
-                                        requests.post(f"http://127.0.0.1:8000/submit_otp/{task_id}", json={"otp": otp_val})
-                                        st.success("OTP Submitted! Resuming...")
-                                        time.sleep(1)
-                                        st.rerun()
-                                    else:
-                                        st.error("Please enter a valid OTP.")
-                        else:
-                            st.info("🤖 **Bot is navigating the site and recording evidence...**")
-                            progress_bar = st.progress(progress, text=f"Processing: {int(progress * 100)}%")
-                            
-                            # Polling logic via rerun
-                            time.sleep(2)
-                            st.rerun()
-                else:
-                    st.error("Failed to connect to backend API.")
-                    if st.button("Clear"):
-                        del st.session_state.active_crawl_task
-                        st.rerun()
-            except Exception as e:
-                st.error(f"Error checking status: {e}")
-                if st.button("Clear"):
-                    del st.session_state.active_crawl_task
-                    st.rerun()
-
-    st.markdown("<hr style='margin:1.5rem 0; border-color:#E2E8F0;'>", unsafe_allow_html=True)
     st.markdown("#### Select Existing Analysis")
     
     # Check existing outputs via API
@@ -492,47 +425,188 @@ with st.sidebar:
     if "output_dir" not in st.session_state:
         st.session_state.output_dir = cli_dir or (existing_outputs[0]["id"] if existing_outputs else "")
         
-    options = [d["id"] for d in existing_outputs]
+    options = [""] + [d["id"] for d in existing_outputs]
     if cli_dir and cli_dir not in options:
         options.append(cli_dir)
 
     def format_task(task_id):
+        if not task_id:
+            return "--- Start New Task ---"
         for d in existing_outputs:
             if d["id"] == task_id:
-                return d["video_name"]
+                cid = d.get("complaint_id")
+                prefix = f"📁 [{cid}] " if cid else ""
+                return f"{prefix}{d['video_name']}"
         return task_id
+
+    current_val = st.session_state.get("output_dir", "")
+    try:
+        idx = options.index(current_val)
+    except ValueError:
+        idx = 0
 
     selected_output = st.selectbox(
         "Previous Analyses", 
         options=options,
-        index=0 if options else None,
+        index=idx,
         format_func=format_task,
         label_visibility="collapsed"
     )
     
-    if selected_output and selected_output != st.session_state.output_dir:
+    if selected_output != current_val:
         st.session_state.output_dir = selected_output
+        if "seg_idx_sel" in st.session_state:
+            del st.session_state.seg_idx_sel
         st.rerun()
 
 output_dir = st.session_state.get("output_dir", "")
 if not output_dir:
-    st.markdown("""
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60vh; text-align: center; animation: fadeIn 0.5s ease-in-out;">
-        <style>
-        @keyframes fadeIn {
-            from { opacity: 0; transform: scale(0.95); }
-            to { opacity: 1; transform: scale(1); }
-        }
-        </style>
-        <div style="background: var(--secondary-background-color); border: 1px solid var(--secondary-background-color); border-radius: 50%; width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
-            <span style="font-size: 40px; opacity: 0.8;">🎬</span>
-        </div>
-        <h2 style="font-family: Inter, sans-serif; font-weight: 800; color: var(--text-color); margin-bottom: 12px; font-size: 28px; letter-spacing: -0.5px;">No Analysis Selected</h2>
-        <p style="font-family: Inter, sans-serif; color: var(--text-color); opacity: 0.7; max-width: 450px; line-height: 1.6; font-size: 15px;">
-            Upload a new video from the sidebar or input a URL to launch the autonomous bot. Your forensic dashboard will automatically generate upon completion.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    import time
+    st.markdown("<h2 style='text-align: center; margin-bottom: 2rem;'>🚀 Command Center</h2>", unsafe_allow_html=True)
+    
+    if "active_crawl_task" not in st.session_state:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown("### 🌐 Launch Autonomous Agent")
+            mode = st.radio("Crawl Mode", ["Single URL", "Batch Processing (Complaint)"], horizontal=True, label_visibility="collapsed")
+            
+            if mode == "Single URL":
+                crawl_url = st.text_input("Target Website URL", placeholder="https://example-betting.com")
+                
+                if st.button("Start Autonomous Crawl", type="primary", use_container_width=True):
+                    if crawl_url:
+                        try:
+                            payload = {"url": crawl_url}
+                            resp = requests.post("http://127.0.0.1:8000/crawl", json=payload)
+                            resp.raise_for_status()
+                            st.session_state.active_crawl_task = resp.json()["task_id"]
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error starting crawl: {e}")
+                    else:
+                        st.error("Please enter a URL.")
+            else:
+                complaint_id = st.text_input("Complaint Number", placeholder="194")
+                urls_text = st.text_area("List of URLs (One per line)", placeholder="https://url1.com\nhttps://url2.com", height=150)
+                
+                if st.button("Start Batch Crawl", type="primary", use_container_width=True):
+                    if complaint_id and urls_text:
+                        urls = [u.strip() for u in urls_text.split("\n") if u.strip()]
+                        if urls:
+                            try:
+                                payload = {"complaint_id": complaint_id, "urls": urls}
+                                resp = requests.post("http://127.0.0.1:8000/crawl_batch", json=payload)
+                                resp.raise_for_status()
+                                st.success(f"Batch Queued: {len(urls)} URLs under Complaint {complaint_id}. They will appear in the sidebar as they finish.")
+                            except Exception as e:
+                                st.error(f"Error starting batch crawl: {e}")
+                        else:
+                            st.error("Please enter at least one valid URL.")
+                    else:
+                        st.error("Please provide both a Complaint Number and URLs.")
+                    
+            st.markdown("---")
+            st.markdown("### 📂 Manual Evidence Upload")
+            uploaded_file = st.file_uploader("Select Video to Analyze", type=["mp4", "mov", "avi", "webm"])
+            if uploaded_file and st.button("Analyze Uploaded Video", use_container_width=True):
+                try:
+                    files = {'file': (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                    resp = requests.post("http://127.0.0.1:8000/analyze", files=files)
+                    resp.raise_for_status()
+                    st.session_state.active_crawl_task = resp.json()["task_id"] # Use same UI for polling
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+    else:
+        task_id = st.session_state.active_crawl_task
+        status_placeholder = st.empty()
+        
+        while True:
+            try:
+                status_resp = requests.get(f"http://127.0.0.1:8000/status/{task_id}")
+                if status_resp.status_code == 200:
+                    data = status_resp.json()
+                    status = data.get("status")
+                    crawler_state = data.get("crawler_state")
+                    current_phase = data.get("current_phase", "init")
+                    
+                    if status == "error":
+                        with status_placeholder.container():
+                            st.error(f"🚨 Error: {data.get('error_message')}")
+                            if st.button("Clear & Restart"):
+                                del st.session_state.active_crawl_task
+                                st.rerun()
+                        break
+                    elif status == "complete":
+                        st.session_state.output_dir = str(task_id)
+                        del st.session_state.active_crawl_task
+                        st.rerun()
+                    else:
+                        with status_placeholder.container():
+                            if crawler_state == "waiting_for_otp":
+                                st.error("🚨 **INTERCEPT: 2FA/OTP Required to Expose Financials**", icon="🚨")
+                                with st.form("otp_form"):
+                                    st.info("The autonomous agent has successfully injected seed credentials and bypassed initial security. A live OTP is required to unlock the final financial gateway.")
+                                    otp_val = st.text_input("Enter the OTP sent to the registered mobile/email")
+                                    if st.form_submit_button("Submit OTP to Resume") and otp_val:
+                                        requests.post(f"http://127.0.0.1:8000/submit_otp/{task_id}", json={"otp": otp_val})
+                                        st.success("OTP Accepted! Resuming crawl...")
+                                        time.sleep(1)
+                                        st.rerun()
+                                break # Exit the loop if waiting for user input
+                            else:
+                                st.markdown("### 🤖 Live Agent Telemetry")
+                                
+                                # Live Checklist Logic
+                                phases = {
+                                    "init": 0, "auth": 1, "context": 2, "affiliate": 3, "financial": 4, "finalizing": 5
+                                }
+                                if status == "processing":
+                                    current_idx = 6 # All crawler phases done
+                                else:
+                                    current_idx = phases.get(current_phase, 0)
+                                
+                                def get_icon(idx):
+                                    if current_idx > idx: return "✅"
+                                    if current_idx == idx: return "⏳"
+                                    return "⭕"
+                                    
+                                st.markdown(f"**{get_icon(1)} Phase 1:** Bypassing Security & Authenticating")
+                                st.markdown(f"**{get_icon(2)} Phase 2:** Mapping Contextual Intelligence & Behaviors")
+                                st.markdown(f"**{get_icon(3)} Phase 3:** Scanning Affiliate & Promotion Networks")
+                                st.markdown(f"**{get_icon(4)} Phase 4:** Exposing Financial Gateways & Triggering QR Codes")
+                                st.markdown(f"**{get_icon(5)} Phase 5:** Finalizing Evidence Video")
+                                
+                                if status == "processing":
+                                    st.markdown(f"**⏳ Phase 6:** Extracting Frames & AI Signal Detection")
+                                
+                                st.markdown("---")
+                                if status == "processing":
+                                    progress = data.get("progress", 0.0)
+                                    if progress < 0.70:
+                                        st.progress(progress, text=f"Analyzing Video Evidence: {int(progress * 100)}%")
+                                        st.caption("🔍 **Live Activity:** OpenCV and Tesseract OCR are currently scrubbing the video, detecting QR codes, and mapping UI text.")
+                                    elif progress < 1.0:
+                                        st.progress(progress, text=f"🤖 Generating LLM Forensic Summaries... {int(progress * 100)}%")
+                                        st.caption("🤖 **Live Activity:** The local Vision LLM is now analyzing the top flagged segments and actively writing the forensic Markdown reports. (This takes ~10s per segment).")
+                                    else:
+                                        st.progress(1.0, text="💾 Saving Evidence Reports & Finalizing Database...")
+                                        st.caption("💾 **Live Activity:** Generating final PDF/HTML reports and committing evidence to the local database.")
+                                elif current_phase == "finalizing":
+                                    progress = data.get("progress", 0.0)
+                                    st.progress(progress, text=f"Rendering Evidence: {int(progress * 100)}%")
+                                else:
+                                    st.info("The agent is actively executing operations in the background. Please wait...")
+                
+                time.sleep(1.0)
+            except Exception as e:
+                with status_placeholder.container():
+                    st.error(f"Error checking status: {e}")
+                    if st.button("Clear"):
+                        del st.session_state.active_crawl_task
+                        st.rerun()
+                break
+                
     st.stop()
 
 output_path = Path(output_dir)
@@ -633,7 +707,6 @@ st.markdown(f"""
 # ─────────────────────────── TABS ──────────────────────────────────
 tabs = st.tabs([
     "📊 Overview",
-    "⏱ Timeline",
     "📈 Betting Analysis",
     "💳 Transactions",
     "🔍 Segment Explorer",
@@ -998,225 +1071,8 @@ with tabs[0]:
 
 
 # ═══════════════════════════ TAB 2: TIMELINE ═══════════════════════
-with tabs[1]:
-   
-    # Sankey
-    st.markdown('<div class="section-header">Sankey — Inference Story</div>', unsafe_allow_html=True)
-    st.markdown("""<div style='font-family:Inter,sans-serif;font-size:0.79rem;color:#64748B;margin-bottom:14px;'>
-    End-to-end narrative from raw content to transaction outcome. Node widths = segment counts from your data.
-    </div>""", unsafe_allow_html=True)
-
-    n_betting  = len(betting_segs_obj)
-    n_banking  = len(banking_segs)
-    n_qr       = len(qr_segments)
-    n_tx_att   = len(bet_tx)
-    n_tx_fail  = len(bet_tx)
-    n_tx_succ  = len([t for t in bet_tx if t.get("transaction_used_for_betting")])
-    n_no_act   = max(segment_count - n_betting, 1)
-    n_qr_only  = max(n_qr - n_tx_fail, 0)
-
-    sankey_nodes = json.dumps([
-        {"name":"Video"},
-        {"name":"Betting UI"},
-        {"name":"No Betting Activity"},
-        {"name":"Wallet / Banking"},
-        {"name":"QR Payment Code"},
-        {"name":"Transaction Attempt"},
-        {"name":"Transaction Failed"},
-        {"name":"QR — No Transaction"},
-    ])
-    sankey_links_data = []
-
-    if n_betting > 0:
-        sankey_links_data.append({
-            "source":"Video",
-            "target":"Betting UI",
-            "value":n_betting
-        })
-
-    if n_no_act > 0:
-        sankey_links_data.append({
-            "source":"Video",
-            "target":"No Betting Activity",
-            "value":n_no_act
-        })
-
-    if n_banking > 0:
-        sankey_links_data.append({
-            "source":"Betting UI",
-            "target":"Wallet / Banking",
-            "value":n_banking
-        })
-
-    if n_qr > 0:
-        sankey_links_data.append({
-            "source":"Wallet / Banking",
-            "target":"QR Payment Code",
-            "value":n_qr
-        })
-
-    if n_tx_att > 0:
-        sankey_links_data.append({
-            "source":"QR Payment Code",
-            "target":"Transaction Attempt",
-            "value":n_tx_att
-        })
-
-    if n_tx_fail > 0:
-        sankey_links_data.append({
-            "source":"Transaction Attempt",
-            "target":"Transaction Failed",
-            "value":n_tx_fail
-        })
-
-    if n_qr_only > 0:
-        sankey_links_data.append({
-            "source":"QR Payment Code",
-            "target":"QR — No Transaction",
-            "value":n_qr_only
-        })
-
-    sankey_links = json.dumps(sankey_links_data)
-
-    echarts(f"""{{
-        backgroundColor:'transparent',
-        textStyle:{{ fontFamily:'Inter', color:'#64748B' }},
-        tooltip:{{
-            trigger:'item', triggerOn:'mousemove',
-            backgroundColor:'#fff', borderColor:'#E2E8F0',
-            formatter: function(p){{
-                return '<span style="font-family:Inter;font-weight:600;color:#1E293B;">'
-                    + p.name + '</span><br/>'
-                    + '<span style="font-family:JetBrains Mono;font-size:12px;color:#475569;">'
-                    + (p.value||'') + ' segments</span>';
-            }},
-            padding:12, extraCssText:'box-shadow:0 2px 12px rgba(0,0,0,0.08);border-radius:8px;'
-        }},
-        series:[{{
-            type:'sankey', layout:'none',
-            emphasis:{{ focus:'adjacency' }},
-            nodeAlign:'left', nodeGap:16, nodeWidth:24,
-            left:'2%', right:'10%', top:'6%', bottom:'6%',
-            data:{sankey_nodes},
-            links:{sankey_links},
-            lineStyle:{{ color:'source', opacity:0.22, curveness:0.5 }},
-            itemStyle:{{ borderWidth:0 }},
-            label:{{ fontFamily:'Inter', fontSize:12, fontWeight:600, color:'#1E293B' }},
-            color:['#475569','#D97706','#CBD5E1','#0891B2','#F59E0B','#DC2626','#991B1B','#94A3B8']
-        }}]
-    }}""", height=330, key="sankey_tab2")
-    st.markdown(
-        '<div class="section-header">Chronological Event Feed</div>',
-        unsafe_allow_html=True
-    )
-    st.markdown('<p style="font-size:12px; color:#64748B; margin-top:-10px; margin-bottom:20px;">A forensic step-by-step reconstruction of the video\'s activity timeline.</p>', unsafe_allow_html=True)
-    
-    events_html = '<div style="position:relative; padding-left:24px; border-left:2px solid #E2E8F0; margin-left:16px; font-family:Inter,sans-serif;">'
-    
-    for idx, seg in enumerate(verdicts):
-        bScore = bet_scores[idx] if idx < len(bet_scores) else 0
-        
-        is_significant = False
-        title = "Normal Activity"
-        desc = "No major forensic signals detected."
-        dot_color = "#E2E8F0"
-        title_color = "#64748B"
-        icon = "▶"
-        
-        if (seg.get("transaction_executed", 0) or 0) > 50:
-            title = "Transaction Executed"
-            desc = "A confirmed payment or transaction occurred on screen."
-            dot_color = "#10B981"
-            title_color = "#047857"
-            icon = "✓"
-            is_significant = True
-        elif seg.get("qr_detected"):
-            title = "QR / Payment Scan Detected"
-            desc = "A QR code or explicit payment mechanism was found."
-            dot_color = "#F59E0B"
-            title_color = "#D97706"
-            icon = "⬛"
-            is_significant = True
-        elif (seg.get("transaction_likely", 0) or 0) > 50:
-            title = "High Transaction Likelihood"
-            desc = f"Transaction context score is very high ({seg.get('transaction_likely')}%)"
-            dot_color = "#EF4444"
-            title_color = "#B91C1C"
-            icon = "⚠"
-            is_significant = True
-        elif bScore > 50:
-            title = "Betting UI Detected"
-            desc = f"Betting application features found (Score: {bScore}%)"
-            dot_color = "#F59E0B"
-            title_color = "#B45309"
-            icon = "⚠"
-            is_significant = True
-        elif (seg.get("banking_context", 0) or 0) > 40:
-            title = "Wallet / Banking App Opened"
-            desc = f"Financial application context detected (Score: {seg.get('banking_context')}%)"
-            dot_color = "#06B6D4"
-            title_color = "#0369A1"
-            icon = "🏦"
-            is_significant = True
-        elif (seg.get("crypto_context", 0) or 0) > 40:
-            title = "Crypto Application Context"
-            desc = f"Cryptocurrency interface detected (Score: {seg.get('crypto_context')}%)"
-            dot_color = "#A855F7"
-            title_color = "#7E22CE"
-            icon = "₿"
-            is_significant = True
-            
-        start_t_str = f"{seg.get('start_time', 0):.1f}"
-        failed_tx = next((tx for tx in bet_tx if tx.get('transaction_time', '') and start_t_str in tx.get('transaction_time', '')), None)
-        
-        if failed_tx and not failed_tx.get('transaction_used_for_betting'):
-            title = "Failed Transaction Attempt"
-            desc = "A transaction was initiated but did not complete successfully."
-            dot_color = "#991B1B"
-            title_color = "#7F1D1D"
-            icon = "⚠"
-            is_significant = True
-            
-        if is_significant or idx == 0 or idx == len(verdicts) - 1:
-            if idx == 0 and not is_significant:
-                title = "Video Analysis Started"
-                desc = "Beginning chronological scan."
-            if idx == len(verdicts) - 1 and not is_significant:
-                title = "Analysis Complete"
-                desc = "End of video feed."
-                dot_color = "#94A3B8"
-                title_color = "#475569"
-                icon = "■"
-                
-            ocr_html = ""
-            if seg.get("ocr_text"):
-                safe_ocr = str(seg.get("ocr_text")).encode("latin-1", "replace").decode("latin-1")
-                if len(safe_ocr) > 100: safe_ocr = safe_ocr[:100] + "..."
-                ocr_html = f"<div style='margin-top:8px; background:#F8FAFC; border:1px solid #F1F5F9; padding:8px; border-radius:4px; font-family:JetBrains Mono,monospace; font-size:11px; color:#64748B;'><span style='font-weight:bold; color:#94A3B8; margin-right:8px;'>OCR:</span>{safe_ocr}</div>"
-                
-            events_html += f"""
-            <div style="position:relative; margin-bottom:32px;">
-                <div style="position:absolute; left:-37px; top:0; width:24px; height:24px; border-radius:50%; background:{dot_color}; border:4px solid #FFF; display:flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.1);"></div>
-                <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:8px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <span style="color:{title_color}; font-size:14px;">{icon}</span>
-                            <span style="color:{title_color}; font-weight:700; font-size:14px;">{title}</span>
-                        </div>
-                        <span style="background:#F8FAFC; padding:4px 8px; border-radius:4px; font-family:JetBrains Mono,monospace; font-size:11px; font-weight:700; color:#94A3B8;">{seg.get('start_time', 0):.1f}s - {seg.get('end_time', 0):.1f}s</span>
-                    </div>
-                    <div style="font-size:13px; color:#475569;">{desc}</div>
-                    {ocr_html}
-                </div>
-            </div>
-            """
-            
-    events_html += "</div>"
-    st.markdown(events_html, unsafe_allow_html=True)
-
-
 # ═══════════════════════════ TAB 3: BETTING ════════════════════════
-with tabs[2]:
+with tabs[1]:
     if bet_scores:
         st.markdown('<div class="section-header">Betting Confidence Trend</div>', unsafe_allow_html=True)
         st.markdown("""<div style='font-family:Inter,sans-serif;font-size:0.79rem;color:#64748B;margin-bottom:12px;'>
@@ -1436,7 +1292,7 @@ with tabs[2]:
 
 
 # ═══════════════════════════ TAB 4: TRANSACTIONS ═══════════════════
-with tabs[3]:
+with tabs[2]:
     st.markdown('<div class="section-header">Transaction Funnel</div>', unsafe_allow_html=True)
     st.markdown("""<div style='font-family:Inter,sans-serif;font-size:0.79rem;color:#64748B;margin-bottom:12px;'>
     Count-based pipeline: from all segments down to successful transactions.
@@ -1554,8 +1410,9 @@ with tabs[3]:
 
 
 # ═══════════════════════════ TAB 5: SEGMENT EXPLORER ═══════════════
-with tabs[4]:
-    if "seg_idx_sel" not in st.session_state:
+with tabs[3]:
+    num_segments = len(verdicts)
+    if "seg_idx_sel" not in st.session_state or st.session_state.seg_idx_sel >= num_segments:
         st.session_state.seg_idx_sel = 0
 
     num_segments = len(verdicts)
@@ -1583,17 +1440,36 @@ with tabs[4]:
             st.session_state.seg_idx_sel += 1
             st.rerun()
     with ctrl_col4:
-        try:
-            m_pdf = create_master_pdf_report(verdicts)
-            st.download_button(
-                label="📥 Master PDF (All Segments)",
-                data=m_pdf,
-                file_name=f"master_report_{original_filename}.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
-        except Exception as e:
-            st.error(f"Master PDF Error: {e}")
+        st.markdown("<div style='font-size:0.75rem; color:#64748B; margin-bottom:4px; text-align:center;'>Master Exports (All Segments)</div>", unsafe_allow_html=True)
+        btn_col1, btn_col2, btn_col3, btn_col4 = st.columns(4)
+        
+        with btn_col1:
+            try:
+                pdf_data = create_master_pdf_report(verdicts)
+                st.download_button("📄 PDF", pdf_data, f"master_{original_filename}.pdf", "application/pdf", use_container_width=True)
+            except:
+                st.button("📄 PDF", disabled=True, use_container_width=True)
+                
+        with btn_col2:
+            try:
+                html_data = create_master_html_report(verdicts)
+                st.download_button("🌐 HTML", html_data, f"master_{original_filename}.html", "text/html", use_container_width=True)
+            except:
+                st.button("🌐 HTML", disabled=True, use_container_width=True)
+                
+        with btn_col3:
+            try:
+                docx_data = create_master_docx_report(verdicts)
+                st.download_button("📝 DOCX", docx_data, f"master_{original_filename}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+            except:
+                st.button("📝 DOCX", disabled=True, use_container_width=True)
+                
+        with btn_col4:
+            try:
+                json_data = create_master_json_report(verdicts)
+                st.download_button("📊 JSON", json_data, f"master_{original_filename}.json", "application/json", use_container_width=True)
+            except:
+                st.button("📊 JSON", disabled=True, use_container_width=True)
 
     seg = verdicts[st.session_state.seg_idx_sel]
 
@@ -1721,16 +1597,27 @@ with tabs[4]:
             }}]
         }}""", height=230, key=f"hbar_{seg['segment_index']}")
 
+    # AI Summary Callout
+    ai_summary = seg.get("ai_summary", "")
+    if ai_summary:
+        with st.container():
+            st.info("🤖 **Frame Summary**")
+            st.markdown(ai_summary)
+
     # Full Width Image and Legend
     st.markdown('<div class="section-header" style="margin-top:20px;">Segment Frames & Evidence</div>', unsafe_allow_html=True)
     proof_frame_path = seg.get("proof_frame")
     if proof_frame_path:
         img_url = f"http://127.0.0.1:8000/{proof_frame_path}"
-        st.image(
-            img_url,
-            caption="Proof Frame (Annotated)",
-            use_container_width=True
-        )
+        try:
+            img_bytes = requests.get(img_url).content
+            st.image(
+                img_bytes,
+                caption="Proof Frame (Annotated)",
+                use_container_width=True
+            )
+        except Exception:
+            pass
         
         # Keyword Categories Display
         colors_hex = {
@@ -1899,7 +1786,7 @@ with tabs[4]:
 
 
 # ═══════════════════════════ TAB 6: REPORTS ════════════════════════
-with tabs[5]:
+with tabs[4]:
     
     # 1. Calculate Verdict
     has_betting = any(s > 50 for s in bet_scores)
@@ -2148,21 +2035,82 @@ with tabs[5]:
             st.info("No crypto transactions recorded.")
 
     with audit_tabs[3]:
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.download_button("⬇ segment_verdicts.json",
-                data=json.dumps(verdicts, indent=2),
-                file_name="segment_verdicts.json", mime="application/json", use_container_width=True)
-        with c2:
-            st.download_button("⬇ betting_scores.json",
-                data=json.dumps(bet_scores, indent=2),
-                file_name="betting_scores.json", mime="application/json", use_container_width=True)
-        with c3:
-            st.download_button("⬇ betting_tx_attr.json",
-                data=json.dumps(bet_tx, indent=2),
-                file_name="betting_tx_attr.json", mime="application/json", use_container_width=True)
-        with c4:
-            st.download_button("⬇ crypto_tx_attr.json",
-                data=json.dumps(crypto_tx, indent=2),
-                file_name="crypto_tx_attr.json", mime="application/json", use_container_width=True)
+        st.markdown("#### 📥 Download Complete Evidence Package")
+        st.caption("Export court-admissible reports featuring AI screenshot summaries, segment timelines, and transaction attributions.")
+
+        col_pdf, col_docx, col_html, col_json = st.columns(4)
+
+        # Helper to fetch report bytes from API
+        def fetch_export(fmt):
+            try:
+                resp = requests.get(f"http://127.0.0.1:8000/analyses/{output_dir}/export/{fmt}")
+                if resp.status_code == 200:
+                    return resp.content
+            except Exception:
+                pass
+            return None
+
+        with col_pdf:
+            pdf_bytes = fetch_export("pdf")
+            if pdf_bytes:
+                st.download_button(
+                    "📄 Download PDF Report",
+                    data=pdf_bytes,
+                    file_name=f"evidence_report_{output_dir}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+            else:
+                st.button("📄 PDF Unavailable", disabled=True, use_container_width=True)
+
+        with col_docx:
+            docx_bytes = fetch_export("docx")
+            if docx_bytes:
+                st.download_button(
+                    "📝 Download Word (DOCX)",
+                    data=docx_bytes,
+                    file_name=f"evidence_report_{output_dir}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True
+                )
+            else:
+                st.button("📝 DOCX Unavailable", disabled=True, use_container_width=True)
+
+        with col_html:
+            html_bytes = fetch_export("html")
+            if html_bytes:
+                st.download_button(
+                    "🌐 Download HTML Web Report",
+                    data=html_bytes,
+                    file_name=f"evidence_report_{output_dir}.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
+            else:
+                st.button("🌐 HTML Unavailable", disabled=True, use_container_width=True)
+
+        with col_json:
+            json_bytes = fetch_export("json")
+            if json_bytes:
+                st.download_button(
+                    "📊 Download JSON Package",
+                    data=json_bytes,
+                    file_name=f"evidence_report_{output_dir}.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
+            else:
+                st.button("📊 JSON Unavailable", disabled=True, use_container_width=True)
+# ─────────────────────────── EXECUTIVE SUMMARY METRICS ──────────────
+st.markdown("### Executive Intelligence Summary")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("QR/UPI Signatures", len(qr_segments), delta="High Risk", delta_color="inverse")
+with col2:
+    st.metric("Mule/Banking Gateways", len(banking_segs), delta="Critical", delta_color="inverse")
+with col3:
+    verdict_text = "Potential Betting Found" if betting_evidence else "Inconclusive"
+    st.metric("Verdict", verdict_text, delta="Action Required" if betting_evidence else "Review", delta_color="inverse")
+st.markdown("<br>", unsafe_allow_html=True)
+
 

@@ -4,7 +4,10 @@ import json
 import time
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from engine.generate_html_report import generate_html_report
+from engine.generate_docx_report import generate_docx_report
+from engine.generate_evidence_report import generate_evidence_report
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
@@ -14,6 +17,7 @@ from database import SessionLocal, get_db
 from models import VideoTask, AnalysisSummary, VideoSegment
 from pydantic import BaseModel
 from crawler import crawl_and_record
+from integration import push_evidence_to_cms
 import shutil
 from urllib.parse import urlparse
 import asyncio
@@ -110,7 +114,8 @@ def process_video_background(task_id: int, file_path: str):
                     banking_context=seg.get("banking_context", 0.0),
                     crypto_context=seg.get("crypto_context", 0.0),
                     transaction_likely=seg.get("transaction_likely", 0.0),
-                    proof_frame_path=seg.get("proof_frame", "")
+                    proof_frame_path=seg.get("proof_frame", ""),
+                    ai_summary=seg.get("ai_summary", "")
                 )
                 db.add(db_seg)
 
@@ -126,6 +131,35 @@ def process_video_background(task_id: int, file_path: str):
         db.commit()
     finally:
         db.close()
+
+
+@app.post("/test-vision")
+async def test_vision(image_file: UploadFile = File(...)):
+    """Quickly tests the LM Studio local vision LLM with a single uploaded image."""
+    from engine.llm_summary import generate_segment_summary
+    import cv2
+    import pytesseract
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+        shutil.copyfileobj(image_file.file, tmp)
+        tmp_path = tmp.name
+        
+    try:
+        ocr_text = ""
+        try:
+            img = cv2.imread(tmp_path)
+            if img is not None:
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                # Quick OCR pass for testing context
+                ocr_text = pytesseract.image_to_string(gray, lang="eng").replace('\n', ' ').strip()
+        except Exception as e:
+            print(f"OCR failed in test-vision: {e}")
+
+        summary = generate_segment_summary(image_path=tmp_path, ocr_text=ocr_text)
+        return {"filename": image_file.filename, "ai_summary": summary}
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 @app.post("/analyze")
@@ -158,7 +192,6 @@ async def analyze_video(background_tasks: BackgroundTasks, file: UploadFile = Fi
 
 class CrawlRequest(BaseModel):
     url: str
-    duration: int = 30
 
 @app.post("/crawl")
 async def start_crawl_analysis(
@@ -194,16 +227,21 @@ async def start_crawl_analysis(
     async def run_crawl_sequence(task_id: int, url: str, duration: int, clean_domain: str):
         async def request_otp_from_user():
             if task_id in CRAWLER_STATES:
-                CRAWLER_STATES[task_id]["status"] = "waiting_for_otp"
+                CRAWLER_STATES[task_id]["crawler_state"] = "waiting_for_otp"
                 await CRAWLER_STATES[task_id]["event"].wait()
                 otp = CRAWLER_STATES[task_id]["otp_code"]
-                CRAWLER_STATES[task_id]["event"].clear() # Reset for next time if needed
+                CRAWLER_STATES[task_id]["event"].clear()
+                CRAWLER_STATES[task_id]["crawler_state"] = "active"
                 return otp
             return None
 
+        def state_callback(key, value):
+            if task_id in CRAWLER_STATES:
+                CRAWLER_STATES[task_id][key] = value
+
         try:
             # Pass task_id so crawler can update state if needed
-            video_path = await crawl_and_record(url, duration=duration, task_id=task_id, otp_callback=request_otp_from_user)
+            video_path = await crawl_and_record(url, duration=duration, task_id=task_id, otp_callback=request_otp_from_user, state_callback=state_callback)
             
             dest_path = f"uploads/{task_id}_{clean_domain}.webm"
             shutil.move(video_path, dest_path)
@@ -233,9 +271,98 @@ async def start_crawl_analysis(
             CRAWLER_STATES.pop(task_id, None)
 
     # Launch sequence
-    background_tasks.add_task(run_crawl_sequence, new_task.id, req.url, req.duration, clean_domain)
+    background_tasks.add_task(run_crawl_sequence, new_task.id, req.url, 120, clean_domain)
 
     return {"task_id": str(new_task.id), "message": "Crawling started in background"}
+
+
+class BatchCrawlRequest(BaseModel):
+    complaint_id: str
+    urls: list[str]
+
+@app.post("/crawl_batch")
+async def start_batch_crawl(
+    req: BatchCrawlRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Crawls a batch of URLs sequentially under a specific complaint ID.
+    """
+    async def process_batch(complaint_id, urls):
+        for url in urls:
+            parsed_url = urlparse(url)
+            domain = parsed_url.netloc.replace("www.", "") or "unknown_domain"
+            clean_domain = "".join(c for c in domain if c.isalnum() or c in ".-_")
+            
+            db_session = SessionLocal()
+            new_task = VideoTask(
+                original_filename=f"{clean_domain}.webm",
+                status="processing",
+                progress=0.0,
+                complaint_id=complaint_id
+            )
+            db_session.add(new_task)
+            db_session.commit()
+            db_session.refresh(new_task)
+            task_id = new_task.id
+            db_session.close()
+            
+            CRAWLER_STATES[task_id] = {
+                "status": "running",
+                "otp_code": None,
+                "event": asyncio.Event()
+            }
+            
+            async def request_otp_from_user():
+                if task_id in CRAWLER_STATES:
+                    CRAWLER_STATES[task_id]["crawler_state"] = "waiting_for_otp"
+                    await CRAWLER_STATES[task_id]["event"].wait()
+                    otp = CRAWLER_STATES[task_id]["otp_code"]
+                    CRAWLER_STATES[task_id]["event"].clear()
+                    CRAWLER_STATES[task_id]["crawler_state"] = "active"
+                    return otp
+                return None
+
+            def state_callback(key, value):
+                if task_id in CRAWLER_STATES:
+                    CRAWLER_STATES[task_id][key] = value
+
+            try:
+                video_path = await crawl_and_record(url, duration=120, task_id=task_id, otp_callback=request_otp_from_user, state_callback=state_callback)
+                dest_path = f"uploads/{task_id}_{clean_domain}.webm"
+                shutil.move(video_path, dest_path)
+                
+                db_session = SessionLocal()
+                task = db_session.query(VideoTask).filter(VideoTask.id == task_id).first()
+                if task:
+                    task.original_filename = os.path.basename(dest_path)
+                    db_session.commit()
+                db_session.close()
+                CRAWLER_STATES.pop(task_id, None)
+                
+                # Sequential background processing
+                await asyncio.to_thread(process_video_background, task_id, dest_path)
+                
+                # Push evidence
+                db_session = SessionLocal()
+                report_data = get_analysis_summary(str(task_id), db_session)
+                db_session.close()
+                if not isinstance(report_data, JSONResponse):
+                    push_evidence_to_cms(complaint_id, report_data)
+                    
+            except Exception as e:
+                db_session = SessionLocal()
+                task = db_session.query(VideoTask).filter(VideoTask.id == task_id).first()
+                if task:
+                    task.status = "error"
+                    task.error_message = f"Crawler failed: {str(e)}"
+                    db_session.commit()
+                db_session.close()
+                CRAWLER_STATES.pop(task_id, None)
+
+    background_tasks.add_task(process_batch, req.complaint_id, req.urls)
+    return {"message": f"Batch processing started for {len(req.urls)} URLs under Complaint ID {req.complaint_id}"}
 
 
 
@@ -253,10 +380,15 @@ def get_status(task_id: str, db: Session = Depends(get_db)):
         
     crawler_state = CRAWLER_STATES.get(task_id_int, {})
         
+    live_progress = crawler_state.get("progress")
+    if live_progress is None:
+        live_progress = task.progress
+        
     return {
         "status": task.status,
-        "crawler_state": crawler_state.get("status"),
-        "progress": task.progress,
+        "crawler_state": crawler_state.get("crawler_state") or crawler_state.get("status"),
+        "current_phase": crawler_state.get("current_phase", "init"),
+        "progress": live_progress,
         "original_filename": task.original_filename,
         "error_message": task.error_message,
         "processing_time_seconds": task.processing_time_seconds
@@ -279,8 +411,15 @@ def submit_otp(task_id: int, req: OTPRequest):
 def list_analyses(db: Session = Depends(get_db)):
     """Lists all completed analyses from the database."""
     completed_tasks = db.query(VideoTask).filter(VideoTask.status == "complete").all()
-    # Return list of string task IDs to match frontend expectation
-    return [str(task.id) for task in completed_tasks]
+    # Return list of dicts to support grouping by complaint_id in UI
+    return [
+        {
+            "id": str(task.id),
+            "video_name": task.original_filename,
+            "complaint_id": task.complaint_id
+        } 
+        for task in completed_tasks
+    ]
 
 
 @app.get("/analyses_detailed")
@@ -292,7 +431,8 @@ def list_analyses_detailed(db: Session = Depends(get_db)):
             "id": str(task.id),
             "video_name": task.original_filename or f"Task {task.id}",
             "status": task.status,
-            "progress": task.progress or 0.0
+            "progress": task.progress or 0.0,
+            "complaint_id": task.complaint_id
         }
         for task in tasks
     ]
@@ -324,7 +464,8 @@ def get_analysis_summary(task_id: str, db: Session = Depends(get_db)):
             "banking_context": s.banking_context,
             "crypto_context": s.crypto_context,
             "transaction_likely": s.transaction_likely,
-            "proof_frame": s.proof_frame_path
+            "proof_frame": s.proof_frame_path,
+            "ai_summary": s.ai_summary or ""
         })
         
     meta_dict = summary.metadata_json if summary and summary.metadata_json else {}
@@ -340,4 +481,52 @@ def get_analysis_summary(task_id: str, db: Session = Depends(get_db)):
         "final_verdict_report_txt": summary.final_verdict_report_txt if summary else "",
         "metadata": meta_dict
     }
+
+
+@app.get("/analyses/{task_id}/export/{export_format}")
+def export_analysis_report(task_id: str, export_format: str, db: Session = Depends(get_db)):
+    """Exports evidence report in PDF, HTML, DOCX, or JSON format."""
+    try:
+        task_id_int = int(task_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"detail": "Invalid task ID format"})
+
+    task = db.query(VideoTask).filter(VideoTask.id == task_id_int).first()
+    if not task:
+        return JSONResponse(status_code=404, content={"detail": "Analysis task not found"})
+
+    output_dir = Path(f"outputs/{task_id}")
+    if not output_dir.exists():
+        return JSONResponse(status_code=404, content={"detail": f"Output directory outputs/{task_id} not found"})
+
+    fmt = export_format.lower()
+    complaint_id = task.complaint_id or "N/A"
+
+    if fmt == "pdf":
+        pdf_path = output_dir / "evidence_report.pdf"
+        if not pdf_path.exists():
+            # Generate fallback PDF if not generated yet
+            segments = db.query(VideoSegment).filter(VideoSegment.task_id == task_id_int).order_by(VideoSegment.segment_index).all()
+            seg_dicts = [{"segment_index": s.segment_index, "start_time": s.start_time, "end_time": s.end_time, "proof_frame": s.proof_frame_path, "ai_summary": s.ai_summary} for s in segments]
+            generate_evidence_report(segments=seg_dicts, qr_segments=seg_dicts, executed_segments=[], failed_segments=[], likely_segments=[], betting_attribution=[], betting_scores=[], avg_banking=0, avg_crypto=0, meaningful_betting=0, betting_pct=0, output_dir=str(output_dir))
+        return FileResponse(pdf_path, media_type="application/pdf", filename=f"evidence_report_task_{task_id}.pdf")
+
+    elif fmt == "html":
+        html_path = generate_html_report(str(output_dir), task_id=str(task_id), complaint_id=complaint_id)
+        return FileResponse(html_path, media_type="text/html", filename=f"evidence_report_task_{task_id}.html")
+
+    elif fmt in ["docx", "doc"]:
+        docx_path = generate_docx_report(str(output_dir), task_id=str(task_id), complaint_id=complaint_id)
+        return FileResponse(docx_path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename=f"evidence_report_task_{task_id}.docx")
+
+    elif fmt == "json":
+        summary_data = get_analysis_summary(task_id, db)
+        json_path = output_dir / "evidence_report.json"
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(summary_data, f, indent=2)
+        return FileResponse(json_path, media_type="application/json", filename=f"evidence_report_task_{task_id}.json")
+
+    else:
+        return JSONResponse(status_code=400, content={"detail": "Unsupported export format. Supported formats: pdf, html, docx, json"})
+
 

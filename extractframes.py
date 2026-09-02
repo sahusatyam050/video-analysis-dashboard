@@ -249,7 +249,7 @@ def preprocess_for_ocr(rgb):
         255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY,
-        3,
+        15,
         2
     )
 
@@ -406,14 +406,13 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_cal
     lowCount = 0
     maxLow = 5
 
-    tesseract_config = "--oem 1 --psm 6"
+    tesseract_config = "--oem 1 --psm 11"
 
-    # ---- Hash-skip state: track previous frame for pixel comparison ----
-    frames_since_last_ocr = 0
-    MAX_REUSE_FRAMES = 3
-    prev_gray_small = None
+    # ---- Hash-skip state: track previous OCR'd frame for pixel comparison to prevent drift ----
+    MAX_REUSE_FRAMES = 999999
+    last_ocr_gray_small = None
     prev_norm_text  = ""
-    PIXEL_DIFF_THRESHOLD = 0.02   # 2% mean pixel change triggers new OCR
+    PIXEL_DIFF_THRESHOLD = 0.015   # 1.5% mean pixel change from the last OCR'd frame triggers new OCR
 
     # ---- OCR lines collected in memory, flushed once after loop ----
     ocr_lines = []
@@ -429,7 +428,8 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_cal
                 ts = float(frame.pts * stream.time_base)
 
                 if progress_callback and total_duration and total_duration > 0:
-                    progress = min(1.0, max(0.0, ts / total_duration))
+                    # Video decoding takes up the first 70% of progress
+                    progress = min(0.70, max(0.0, (ts / total_duration) * 0.70))
                     progress_callback(progress)
 
                 # Sample frames based on time interval
@@ -439,24 +439,25 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_cal
 
                 rgb = frame.to_ndarray(format="rgb24")
 
-                # ---------- CHEAP PIXEL HASH CHECK ----------
+                # ---------- CHEAP PIXEL HASH CHECK (AGAINST LAST OCR FRAME) ----------
                 # Resize to 64x64 grayscale for fast comparison
                 raw_gray_small = cv2.resize(
                     cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY),
                     (64, 64)
                 )
 
-                if prev_gray_small is not None:
+                if last_ocr_gray_small is not None:
                     pixel_diff = np.mean(
-                        np.abs(raw_gray_small.astype(np.float32) - prev_gray_small.astype(np.float32))
+                        np.abs(raw_gray_small.astype(np.float32) - last_ocr_gray_small.astype(np.float32))
                     ) / 255.0
                     frame_changed = pixel_diff >= PIXEL_DIFF_THRESHOLD
                 else:
                     frame_changed = True
 
-                prev_gray_small = raw_gray_small
-
-                if frame_changed or frames_since_last_ocr >= MAX_REUSE_FRAMES:
+                if frame_changed:
+                    # Update anchor frame for next drift comparison
+                    last_ocr_gray_small = raw_gray_small
+                    
                     # ---------- OCR (DUAL PASS STRATEGY) ----------
                     gray, processed = preprocess_for_ocr(rgb)
 
@@ -480,7 +481,7 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_cal
                             gray,
                             lang="eng",
                             config=(
-                                "--oem 1 --psm 6 "
+                                "--oem 1 --psm 11 "
                                 "-c tessedit_char_whitelist="
                                 "₹0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
                             ),
@@ -515,7 +516,7 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_cal
                         roi_data = pytesseract.image_to_data(
                             roi_gray,
                             lang="eng",
-                            config="--oem 1 --psm 6",
+                            config="--oem 1 --psm 11",
                             output_type=Output.DICT
                         )
                     
@@ -535,13 +536,10 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_cal
                                     currentSegment["categorized_hits"][cat].update(words)
 
                     prev_norm_text = norm_text
-                    frames_since_last_ocr = 0
 
                 else:
-                    # Frame almost identical to previous — reuse OCR result
+                    # Frame almost identical to last OCR frame — reuse OCR result
                     norm_text = prev_norm_text
-                    frames_since_last_ocr += 1
-                
 
                 # Token extraction
                 tokens = cleanTokens(extractTokens(norm_text))
@@ -677,7 +675,8 @@ def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_cal
     write_segment_verdicts(
         segments=segments,
         segment_scores=results,
-        output_dir=output_dir
+        output_dir=output_dir,
+        progress_callback=progress_callback
     )
 
     # -------------------- BETTING ANALYSIS --------------------
