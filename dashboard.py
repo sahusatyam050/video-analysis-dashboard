@@ -238,7 +238,7 @@ def create_master_pdf_report(verdicts):
             pdf.ln(10)
             
         pdf.set_font("helvetica", size=12, style="B")
-        pdf.cell(190, 10, txt="AI Forensic Summary", ln=True)
+        pdf.cell(190, 10, txt="LLM Generated Summary", ln=True)
         pdf.set_font("helvetica", size=10)
         
         ai_summary = seg.get("ai_summary", "No AI Summary Generated.")
@@ -286,7 +286,7 @@ def create_master_docx_report(verdicts):
             except:
                 doc.add_paragraph("[Image processing error]")
                 
-        doc.add_heading("AI Forensic Summary", level=2)
+        doc.add_heading("LLM Generated Summary", level=2)
         summary_text = seg.get("ai_summary", "No AI Summary Generated.")
         doc.add_paragraph(summary_text.replace("**", ""))
         
@@ -566,7 +566,7 @@ if not output_dir:
                                 <div style='display:flex;justify-content:space-between;align-items:center;
                                     margin-bottom:12px;'>
                                     <span style='font-size:1.1rem;font-weight:700;color:#1E293B;'>
-                                        🤖 Forensic Agent — Live Telemetry
+                                        🤖 Agent — Live Telemetry
                                     </span>
                                     <span style='background:#F1F5F9;border:1px solid #CBD5E1;
                                         border-radius:20px;padding:4px 14px;
@@ -2186,7 +2186,7 @@ with col1:
 with col2:
     st.metric("Mule/Banking Gateways", len(banking_segs), delta="Critical", delta_color="inverse")
 with col3:
-    verdict_text = "Potential Betting Found" if betting_evidence else "Inconclusive"
+    verdict_text = "Potential Betting" if betting_evidence else "Inconclusive"
     st.metric("Verdict", verdict_text, delta="Action Required" if betting_evidence else "Review", delta_color="inverse")
 st.markdown("<br>", unsafe_allow_html=True)
 
