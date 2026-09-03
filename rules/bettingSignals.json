@@ -207,6 +207,42 @@
     {
       "term": "sbobet",
       "weight": 38
+    },
+    {
+      "term": "betvictor",
+      "weight": 38
+    },
+    {
+      "term": "betvictor.com",
+      "weight": 38
+    },
+    {
+      "term": "pinnacle",
+      "weight": 38
+    },
+    {
+      "term": "pinnacle.com",
+      "weight": 38
+    },
+    {
+      "term": "fun88",
+      "weight": 38
+    },
+    {
+      "term": "fun88.com",
+      "weight": 38
+    },
+    {
+      "term": "10bet",
+      "weight": 38
+    },
+    {
+      "term": "10bet.com",
+      "weight": 38
+    },
+    {
+      "term": "betplay.com",
+      "weight": 38
     }
   ],
   "betting_phrases": [

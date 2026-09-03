@@ -74,7 +74,7 @@ def load_bounding_box_keywords():
         
     # Deduplicate and sort by length descending (longest phrases first for better matching)
     for k in keywords:
-        unique_words = list(set(keywords[k]))
+        unique_words = list(set([str(w).lower() for w in keywords[k]]))
         unique_words.sort(key=len, reverse=True)
         keywords[k] = unique_words
         
@@ -351,6 +351,10 @@ def writeSegments(segments,output_dir):
 # -------------------- MAIN PIPELINE --------------------
 
 def extractFrames(videoPath, outputDir="frames", sampleSeconds=0.5, progress_callback=None, video_name=None):
+    # Dynamically reload bounding box keywords so live JSON edits apply immediately
+    global CATEGORIZED_KEYWORDS
+    CATEGORIZED_KEYWORDS = load_bounding_box_keywords()
+    
     # Create a unique output folder for this video
     if not video_name:
         video_name = os.path.splitext(

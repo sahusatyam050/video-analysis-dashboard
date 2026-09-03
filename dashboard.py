@@ -176,7 +176,7 @@ def create_pdf_report(seg, img_path):
     pdf.cell(190, 10, txt=f"Segment {seg['segment_index']} Evidence Report", ln=True, align='C')
     
     pdf.set_font("helvetica", size=10)
-    pdf.cell(190, 8, txt=f"Time: {seg['start_time']:.2f}s to {seg['end_time']:.2f}s", ln=True, align='C')
+    pdf.cell(190, 8, txt=f"Time: {format_time_val(seg['start_time'])} to {format_time_val(seg['end_time'])}", ln=True, align='C')
     pdf.ln(5)
     
     # Add Image
@@ -225,7 +225,7 @@ def create_master_pdf_report(verdicts):
         pdf.cell(190, 10, txt=f"Segment {seg['segment_index']} Evidence Report", ln=True, align='C')
         
         pdf.set_font("helvetica", size=10)
-        pdf.cell(190, 8, txt=f"Time: {seg['start_time']:.2f}s to {seg['end_time']:.2f}s", ln=True, align='C')
+        pdf.cell(190, 8, txt=f"Time: {format_time_val(seg['start_time'])} to {format_time_val(seg['end_time'])}", ln=True, align='C')
         pdf.ln(5)
         
         # Add Image
@@ -258,7 +258,7 @@ def create_master_html_report(verdicts):
     html += f"<h1>Master Evidence Report</h1><p>Segments: {len(verdicts)}</p>"
     for seg in verdicts:
         html += f"<hr><h2>Segment {seg['segment_index']}</h2>"
-        html += f"<p><b>Time:</b> {seg['start_time']}s - {seg['end_time']}s</p>"
+        html += f"<p><b>Time:</b> {format_time_val(seg['start_time'])} - {format_time_val(seg['end_time'])}</p>"
         if seg.get("ai_summary"):
             import markdown
             md_html = markdown.markdown(seg["ai_summary"])
@@ -277,7 +277,7 @@ def create_master_docx_report(verdicts):
     
     for seg in verdicts:
         doc.add_heading(f"Segment {seg['segment_index']} Evidence", level=1)
-        doc.add_paragraph(f"Time: {seg['start_time']:.2f}s to {seg['end_time']:.2f}s")
+        doc.add_paragraph(f"Time: {format_time_val(seg['start_time'])} to {format_time_val(seg['end_time'])}")
         
         img_path = seg.get("proof_frame")
         if img_path and os.path.exists(img_path):
@@ -713,8 +713,30 @@ if not verdicts:
     st.stop()
 
 # ─────────────────────────── DERIVED STATS — real field math only ──
+def format_time_val(s):
+    try:
+        s = float(s)
+        if s >= 60:
+            m = int(s // 60)
+            sec = s % 60
+            return f"{m}m {sec:.1f}s".replace(".0s", "s")
+        else:
+            return f"{s:.1f}s".replace(".0s", "s")
+    except:
+        return f"{s}s"
+
+def format_time_range_str(tr_str):
+    tr_str = str(tr_str)
+    if "–" in tr_str: parts = tr_str.split("–")
+    elif "-" in tr_str: parts = tr_str.split("-")
+    else: return format_time_val(tr_str)
+    if len(parts) == 2:
+        return f"{format_time_val(parts[0])} - {format_time_val(parts[1])}"
+    return tr_str
+
 segment_count   = len(verdicts)
 total_duration  = verdicts[-1]["end_time"] if verdicts else 0
+dur_str = format_time_val(total_duration)
 
 # All computed from actual numeric fields — no assumed labels
 qr_segments     = [v for v in verdicts if v.get("qr_detected")]
@@ -777,7 +799,7 @@ st.markdown(f"""
   </span>
 </div>
 <div style='color:#64748B;font-family:JetBrains Mono,monospace;font-size:0.7rem;margin-bottom:26px;'>
-  <span style='color:#1E293B;font-weight:700;'>{original_filename}</span><span>:Videoname</span> · {segment_count} segments · {total_duration:.1f}s total · {len(qr_segments)} QR detections · {len(failed_tx_times)} failed transactions
+  <span style='color:#1E293B;font-weight:700;'>{original_filename}</span><span>:Videoname</span> · {segment_count} segments · {dur_str} total · {len(qr_segments)} QR detections · {len(failed_tx_times)} failed transactions
 </div>
 """, unsafe_allow_html=True)
 
@@ -850,7 +872,7 @@ with tabs[0]:
                 <span>▶</span>
             </div>
             <div class="metric-value">{segment_count}</div>
-            <div class="metric-sub">{total_duration:.1f}s video</div>
+            <div class="metric-sub">{dur_str} video</div>
         </div>
         <div class="metric-card">
             <div class="metric-header">
@@ -920,7 +942,7 @@ with tabs[0]:
         exec_html += exec_card("High Tx Likely", f"{len(tx_likely_segs)} segments")
         exec_html += exec_card("Failed Tx", f"{len(failed_tx_times)} attempts")
         exec_html += exec_card("Tx Executed", f"{len(tx_exec_segs)} confirmed")
-        exec_html += exec_card("Video Duration", f"{total_duration:.1f}s")
+        exec_html += exec_card("Video Duration", f"{dur_str}")
         
         exec_html += '</div>'
         
@@ -1118,7 +1140,7 @@ with tabs[0]:
     st.markdown('<div class="section-header">Key Event Alerts</div>', unsafe_allow_html=True)
     alert_cols = st.columns(3)
 
-    qr_times = [f"{v['start_time']:.2f}s–{v['end_time']:.2f}s" for v in qr_segments]
+    qr_times = [f"{format_time_val(v['start_time'])}–{format_time_val(v['end_time'])}" for v in qr_segments]
     with alert_cols[0]:
         if qr_times:
             times_html = "<br>".join(f"• {t}" for t in qr_times)
@@ -1130,7 +1152,7 @@ with tabs[0]:
 
     with alert_cols[1]:
         if tx_likely_segs:
-            times_html = "<br>".join(f"• {v['start_time']:.2f}s–{v['end_time']:.2f}s" for v in tx_likely_segs[:6])
+            times_html = "<br>".join(f"• {format_time_val(v['start_time'])}–{format_time_val(v['end_time'])}" for v in tx_likely_segs[:6])
             st.markdown(f"""<div class='qr-alert'>
               <div class='qr-alert-title'>⚡ High-Confidence Transaction Segments</div>
               {times_html}</div>""", unsafe_allow_html=True)
@@ -1139,7 +1161,7 @@ with tabs[0]:
 
     with alert_cols[2]:
         if failed_tx_times:
-            times_html = "<br>".join(f"• {t}" for t in failed_tx_times)
+            times_html = "<br>".join(f"• {format_time_range_str(t)}" for t in failed_tx_times)
             st.markdown(f"""<div class='tx-alert'>
               <div class='tx-alert-title'>✗ Failed / Unconfirmed Transaction Attempts</div>
               {times_html}</div>""", unsafe_allow_html=True)
@@ -1255,7 +1277,7 @@ with tabs[1]:
                 sc_txlk = seg.get("transaction_likely", 0) or 0
                 dur     = round(seg["end_time"] - seg["start_time"], 2)
                 tip     = (f"Seg #{seg['segment_index']} — {lane_name}\\n"
-                           f"Start: {seg['start_time']:.2f}s | End: {seg['end_time']:.2f}s | Duration: {dur}s\\n"
+                           f"Start: {format_time_val(seg['start_time'])} | End: {format_time_val(seg['end_time'])} | Duration: {format_time_val(dur)}\\n"
                            f"Banking: {sc_bank:.1f}% | Crypto: {sc_cryp:.1f}% | Tx Likely: {sc_txlk:.1f}%\\n"
                            f"Betting Score: {sc_bet:.1f} | QR: {'Yes' if seg.get('qr_detected') else 'No'}")
                 hm_items.append({
@@ -2184,10 +2206,22 @@ col1, col2, col3 = st.columns(3)
 with col1:
     st.metric("QR/UPI Signatures", len(qr_segments), delta="High Risk", delta_color="inverse")
 with col2:
-    st.metric("Mule/Banking Gateways", len(banking_segs), delta="Critical", delta_color="inverse")
+    st.metric("Banking Context", len(banking_segs), delta="Critical", delta_color="inverse")
 with col3:
-    verdict_text = "Potential Betting" if betting_evidence else "Inconclusive"
-    st.metric("Verdict", verdict_text, delta="Action Required" if betting_evidence else "Review", delta_color="inverse")
+    if has_betting:
+        verdict_text = "Potential Betting"
+        delta_text = "Action Required"
+        d_color = "inverse"
+    elif len(banking_segs) > 0 or len(qr_segments) > 0:
+        verdict_text = "Financial Activity Found"
+        delta_text = "Manual Review"
+        d_color = "off"
+    else:
+        verdict_text = "No Threats Detected"
+        delta_text = "Clear"
+        d_color = "normal"
+        
+    st.metric("Verdict", verdict_text, delta=delta_text, delta_color=d_color)
 st.markdown("<br>", unsafe_allow_html=True)
 
 
